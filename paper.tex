@@ -1,0 +1,67 @@
+\documentclass[journal]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+\begin{document}
+
+\title{AdaptiveSched: Self-Tuning CPU Scheduler Selection via Online Bandit Learning and SLO-Aware Rollback}
+
+\author{ARJUN TYAGI (Reg No 24BCE0605) and ARITRA GHOSH (24BCE0598)\\
+\textit{SCOPE Department, VIT VELLORE}
+\thanks{This work is a project proposal and literature review for academic purposes.}}
+
+\maketitle
+
+\begin{abstract}
+General-purpose operating systems traditionally depend on a single CPU scheduler, which fails to deliver optimal performance in the face of ever-changing workloads like gaming, compilation and network request handling. While the introduction of the sched\_ext framework in Linux provides the ability to dynamically load different schedulers, it does not offer an automated way to determine which scheduler to pick. All existing adaptive approaches depend on offline trained machine learning models and hard-wired, hardware-specific calibration tables, thus suffering from poor adaptivity to new environments. In order to fill in these gaps, we propose a user-space scheduling agent, which treats scheduler switching as an online multi-armed bandit problem. With the use of continuously collected latency and throughput measurements as a reward signal, the agent automatically selects the optimal sched\_ext scheduler without any offline training. Moreover, in order to ensure the stability of the system, our solution is equipped with an automated watchdog, which evaluates the post-switch performance with respect to the Service Level Objective (SLO) set by the user and automatically switches back to the default scheduler in case of degradation. This paper introduces the architecture of the proposed system and the methodology for its evaluation on the real Linux kernel in different workloads.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Linux kernel, CPU scheduling, multi-armed bandits, reinforcement learning, sched\_ext, service level objectives.
+\end{IEEEkeywords}
+
+\section{Literature Review}
+
+The problem of optimizing CPU scheduling in the presence of diverse workloads has attracted much attention in research, including everything from delegating scheduling to user space to machine learning techniques. While conventional operating systems use static default scheduler, the recent developments include dynamic tuning of parameters as well as entire policy switching.
+
+One of the solutions to this problem is to delegate scheduling policies to the user-space. The work done by Humphries et al. introduces ghOSt framework, which allows complex scheduling policies to be defined in user-space agents and provides a lot of flexibility in data center workloads \cite{humphries2021ghost}. Another example is Syrup, which enables developers to define custom scheduling policies on multiple execution levels and shows a lot of performance improvement \cite{kaffes2021syrup}. However, even though these solutions provide means for custom policies, they require humans to manually configure them for particular applications.
+
+Machine learning, especially reinforcement learning (RL) technique has been used more and more often to automatize system optimization process. For example, Han et al. show how to use policy gradient RL for dynamically tuning parameters of Linux CPU frequency governors on Android smartphones to adapt to changing workload \cite{han2020performance}. Pattanayak uses online RL technique to optimize the Linux CPU-idle menu governor based on the statistics of load balancing in the scheduler \cite{pattanayak2019linux}. These works prove applicability of online learning techniques to kernel subsystems, but focus only on fine-tuning parameters of particular governor or scheduler.
+
+Within the context of cluster scheduling, there is an example of Decima system, which uses deep reinforcement learning to learn workload-specific scheduling algorithms \cite{mao2019learning}. Even though this work shows great results for data processing clusters, it requires lots of offline training and operates on a higher level of abstraction than OS-level CPU scheduling. More recently, Tang et al. show how to optimize Linux scheduling based on global runqueues using the SCX framework \cite{tang2024optimizing}.
+
+The most similar to our proposed solution is the line of work that uses trained models for scheduler selection. Recently published preprints describe ASA system, which uses predictions from models along with time-weighted voting and pre-configured, machine-specific mapping tables to automatically select different schedulers using sched\_ext framework \cite{asa2025}. This work proves feasibility of dynamic scheduler switching in the real kernel, but relies on the offline training and static calibration tables.
+
+Our work closes the gaps by viewing the problem of schedulers selection as non-stationary online multi-armed bandit problem. Contrary to existing works which rely on offline calibration or tuning of parameters within single policy, our approach requires no prior knowledge and learns the optimal scheduler based on the real-time latency and throughput measurements. Also, in order to address the safety issue with policy switching absent in existing literature, we introduce post-switch watchdog that guarantees adherence to the Service Level Objective (SLO) of the user by enforcing the automatic rollback in case of performance degradation.
+
+\begin{thebibliography}{00}
+
+\bibitem{humphries2021ghost}
+J. Humphries et al., ``ghOSt: Fast and Flexible User-Space Delegation of Linux Scheduling,'' in \textit{Proceedings of the ACM SIGOPS 28th Symposium on Operating Systems Principles (SOSP)}, 2021, pp. 588-604.
+
+\bibitem{kaffes2021syrup}
+K. Kaffes et al., ``Syrup: User-Defined Scheduling Across the Stack,'' in \textit{Proceedings of the ACM SIGOPS 28th Symposium on Operating Systems Principles (SOSP)}, 2021, pp. 605-620.
+
+\bibitem{han2020performance}
+C. Han et al., ``Performance Improvement of Linux CPU Scheduler Using Policy Gradient Reinforcement Learning for Android Smartphones,'' \textit{IEEE Access}, vol. 8, pp. 15994-16003, 2020.
+
+\bibitem{pattanayak2019linux}
+A. Pattanayak, ``Linux CPU-Idle Menu Governor with Online Reinforcement Learning and Scheduler Load Balancing Statistics,'' in \textit{IEEE International Conference on Electronics, Computing and Communication Technologies (CONECCT)}, 2019, pp. 1-6.
+
+\bibitem{mao2019learning}
+H. Mao et al., ``Learning Scheduling Algorithms for Data Processing Clusters,'' in \textit{Proceedings of the ACM Special Interest Group on Data Communication (SIGCOMM)}, 2019, pp. 270-288.
+
+\bibitem{tang2024optimizing}
+J. Tang, Y. Gao, L. Li, and C. Lin, ``Optimizing Linux Scheduling Based on Global Runqueue with SCX,'' in \textit{IEEE International Conference on Systems, Man, and Cybernetics (SMC)}, 2024, pp. 1-6.
+
+\bibitem{asa2025}
+Anonymous Authors, ``Mixture-of-Schedulers: Adaptive Scheduling Agent,'' \textit{arXiv preprint arXiv:2511.11628}, 2025.
+
+\end{thebibliography}
+
+\end{document}

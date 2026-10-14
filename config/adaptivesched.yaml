@@ -1,0 +1,32 @@
+# Main configuration for AdaptiveSched
+mode: "mock"  # "mock" | "real"
+
+agent:
+  implementation: "mock"  # "mock" | "ucb1" | "thompson" | "epsilon_greedy"
+  decision_interval_seconds: 5  # How often the agent makes decisions
+  
+metrics:
+  implementation: "mock"  # "mock" | "proc" | "perf"
+  collection_interval_seconds: 1  # How often metrics are collected
+
+schedulers:
+  available:
+    - "scx_rusty"
+    - "scx_lavd"
+    - "scx_bpfland"
+    - "scx_simple"
+    - "default"
+  default: "default"
+
+slo:
+  active_profile: "balanced"
+  profiles_dir: "config/slo_profiles"
+
+dashboard:
+  host: "0.0.0.0"
+  port: 8080
+  update_interval_ms: 1000
+
+logging:
+  level: "INFO"
+  file: "logs/adaptivesched.log"

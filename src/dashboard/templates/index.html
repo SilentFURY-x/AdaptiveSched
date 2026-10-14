@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AdaptiveSched — Autonomous CPU Scheduler Engine</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/css/dashboard.css">
+</head>
+<body class="dark-theme">
+    <!-- Ambient Background Lighting -->
+    <div class="ambient-glow glow-1"></div>
+    <div class="ambient-glow glow-2"></div>
+
+    <div class="app-container">
+        <!-- Top Navigation -->
+        <header class="app-header">
+            <div class="header-left">
+                <div class="brand-logo">
+                    <div class="brand-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="4" y="4" width="16" height="16" rx="2" />
+                            <rect x="9" y="9" width="6" height="6" />
+                            <path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3" />
+                        </svg>
+                    </div>
+                    <div>
+                        <div class="brand-title">Adaptive<span class="gradient-text">Sched</span></div>
+                        <div class="brand-subtitle">Online Bandit Learning &amp; SLO-Aware Rollback</div>
+                    </div>
+                </div>
+                <div class="badge-group">
+                    <span id="system-mode-badge" class="badge badge-mode">MOCK MODE</span>
+                    <span id="system-algo-badge" class="badge badge-algo">ALGO: UCB1</span>
+                    <span id="agent-state-badge" class="badge badge-status pulse">AGENT ACTIVE</span>
+                </div>
+            </div>
+
+            <div class="header-right">
+                <div class="quick-stat">
+                    <span class="label">UPTIME</span>
+                    <span id="uptime-val" class="mono-value">00:00:00</span>
+                </div>
+                <div class="quick-stat">
+                    <span class="label">CYCLES</span>
+                    <span id="cycle-count-val" class="mono-value">0</span>
+                </div>
+                <div class="header-actions">
+                    <button id="btn-pause-resume" class="btn btn-outline" onclick="togglePauseResume()">
+                        <span id="pause-icon">⏸</span> <span id="pause-text">Pause Agent</span>
+                    </button>
+                    <button id="btn-trigger-spike" class="btn btn-danger" onclick="triggerSpike()">
+                        <span>⚡</span> Inject Workload Spike
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- KPI Summary Cards -->
+        <section class="kpi-grid">
+            <!-- Active Scheduler Card -->
+            <div class="card kpi-card kpi-card-highlight">
+                <div class="kpi-header">
+                    <span class="kpi-title">ACTIVE SCHEDULER</span>
+                    <span class="kpi-icon">⚙</span>
+                </div>
+                <div class="kpi-main">
+                    <div id="active-scheduler-name" class="kpi-value text-accent">default</div>
+                    <div class="kpi-subtext" id="scheduler-switch-meta">Switches: 0 | Type: BPF/scx</div>
+                </div>
+                <div class="scheduler-pill-box">
+                    <div class="pill-label">Available:</div>
+                    <div id="schedulers-pill-list" class="pill-list"></div>
+                </div>
+            </div>
+
+            <!-- CPU Utilization Card -->
+            <div class="card kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">CPU UTILIZATION</span>
+                    <span class="kpi-icon">📈</span>
+                </div>
+                <div class="kpi-main">
+                    <div class="kpi-value-group">
+                        <span id="cpu-val" class="kpi-value mono">0.0</span>
+                        <span class="unit">%</span>
+                    </div>
+                    <div class="progress-bar-bg">
+                        <div id="cpu-bar" class="progress-bar-fill" style="width: 0%"></div>
+                    </div>
+                </div>
+                <div class="kpi-subtext" id="cpu-meta">Load balance across 8 mock cores</div>
+            </div>
+
+            <!-- Latency Card -->
+            <div class="card kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">SCHEDULING LATENCY (P99)</span>
+                    <span class="kpi-icon">⏱</span>
+                </div>
+                <div class="kpi-main">
+                    <div class="kpi-value-group">
+                        <span id="latency-val" class="kpi-value mono">0</span>
+                        <span class="unit">μs</span>
+                    </div>
+                    <div class="slo-target-line">
+                        <span>Target: &lt; <span id="latency-target-val">5000</span> μs</span>
+                        <span id="latency-status-tag" class="tag tag-success">COMPLIANT</span>
+                    </div>
+                </div>
+                <div class="kpi-subtext" id="latency-meta">Kernel queue wait &amp; context switch</div>
+            </div>
+
+            <!-- Throughput Card -->
+            <div class="card kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">SYSTEM THROUGHPUT</span>
+                    <span class="kpi-icon">⚡</span>
+                </div>
+                <div class="kpi-main">
+                    <div class="kpi-value-group">
+                        <span id="throughput-val" class="kpi-value mono">0</span>
+                        <span class="unit">ops/s</span>
+                    </div>
+                    <div class="kpi-subtext" id="throughput-meta">Context switches: <span id="cs-val" class="mono">0</span>/s</div>
+                </div>
+                <div class="metric-mini-stats">
+                    <span>Task Queued: <b id="run-queue-val" class="mono">0</b></span>
+                </div>
+            </div>
+
+            <!-- SLO Compliance Card -->
+            <div class="card kpi-card">
+                <div class="kpi-header">
+                    <span class="kpi-title">SLO COMPLIANCE</span>
+                    <span class="kpi-icon">🛡</span>
+                </div>
+                <div class="kpi-main">
+                    <div class="kpi-value-group">
+                        <span id="slo-score-val" class="kpi-value mono text-emerald">100.0</span>
+                        <span class="unit">%</span>
+                    </div>
+                    <div id="watchdog-state-badge" class="state-badge state-idle">STATE: IDLE</div>
+                </div>
+                <div class="kpi-subtext" id="slo-profile-meta">Profile: <b id="active-profile-name">balanced</b></div>
+            </div>
+        </section>
+
+        <!-- Main Workspace (Grid 2:1) -->
+        <div class="content-grid">
+            <!-- Left Column: Charts -->
+            <div class="charts-column">
+                <!-- Latency & Throughput Stream -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <h2 class="card-title">Real-Time Scheduling Latency (P99) &amp; SLO Ceiling</h2>
+                            <p class="card-desc">Evaluated dynamically against the active Service Level Objective</p>
+                        </div>
+                        <div class="chart-controls">
+                            <span class="chart-legend-indicator" style="background: #38bdf8;"></span> Latency (μs)
+                            <span class="chart-legend-indicator" style="background: #f43f5e; margin-left: 10px;"></span> SLO Max
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="latencyChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- CPU & Throughput Multi-Metric Stream -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <h2 class="card-title">CPU Utilization &amp; Workload Throughput</h2>
+                            <p class="card-desc">Tracks scheduling overhead and execution efficiency across decision cycles</p>
+                        </div>
+                        <div class="chart-controls">
+                            <span class="chart-legend-indicator" style="background: #a855f7;"></span> CPU %
+                            <span class="chart-legend-indicator" style="background: #10b981; margin-left: 10px;"></span> Ops/sec
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="systemChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Bandit Arm Exploration & Rewards -->
+                <div class="card chart-card">
+                    <div class="card-header">
+                        <div class="card-header-left">
+                            <h2 class="card-title">Bandit Learning Dynamics — Arm Estimated Rewards</h2>
+                            <p class="card-desc">Online UCB1 exploration vs. exploitation scores per scheduler</p>
+                        </div>
+                    </div>
+                    <div class="chart-container chart-container-sm">
+                        <canvas id="banditChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column: Control & Safety Watchdog -->
+            <div class="controls-column">
+                <!-- Control Panel -->
+                <div class="card control-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Interactive Control Panel</h2>
+                    </div>
+                    <div class="control-section">
+                        <label class="control-label">Manual Scheduler Override</label>
+                        <div class="switch-buttons-grid" id="scheduler-switch-buttons">
+                            <!-- Dynamic buttons for schedulers -->
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <label class="control-label">Active SLO Profile</label>
+                        <div class="profile-selector-group">
+                            <select id="slo-profile-select" class="form-select" onchange="changeSloProfile(this.value)">
+                                <option value="balanced">Balanced (General Purpose)</option>
+                                <option value="interactive">Interactive (Low Latency Gaming/Desktop)</option>
+                                <option value="throughput">Throughput (Batch/Kernel Build)</option>
+                            </select>
+                        </div>
+                        <div class="profile-details-box" id="profile-details">
+                            <div class="constraint-row">
+                                <span>Max P99 Latency:</span> <b id="profile-max-latency" class="mono">--</b>
+                            </div>
+                            <div class="constraint-row">
+                                <span>Max CPU Load:</span> <b id="profile-max-cpu" class="mono">--</b>
+                            </div>
+                            <div class="constraint-row">
+                                <span>Violation Threshold:</span> <b id="profile-threshold" class="mono">3 cycles</b>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="control-section">
+                        <label class="control-label">Safety Anomaly Simulator</label>
+                        <p class="control-help">Injects an immediate burst/latency spike to trigger SLO breach and verify automatic rollback to safe default.</p>
+                        <button class="btn btn-warning w-100" onclick="triggerSpike(15)">
+                            ⚡ Inject 15s Latency Spike (Simulate Thrashing)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- SLO Watchdog State Machine Inspector -->
+                <div class="card watchdog-card">
+                    <div class="card-header">
+                        <h2 class="card-title">SLO Watchdog State Machine</h2>
+                        <span id="watchdog-health-tag" class="tag tag-success">HEALTHY</span>
+                    </div>
+
+                    <div class="state-pipeline">
+                        <div class="pipeline-step" id="step-idle">
+                            <div class="step-circle">1</div>
+                            <div class="step-name">IDLE</div>
+                        </div>
+                        <div class="pipeline-arrow">→</div>
+                        <div class="pipeline-step" id="step-grace">
+                            <div class="step-circle">2</div>
+                            <div class="step-name">GRACE</div>
+                        </div>
+                        <div class="pipeline-arrow">→</div>
+                        <div class="pipeline-step" id="step-monitor">
+                            <div class="step-circle">3</div>
+                            <div class="step-name">MONITOR</div>
+                        </div>
+                        <div class="pipeline-arrow">→</div>
+                        <div class="pipeline-step" id="step-violation">
+                            <div class="step-circle">4</div>
+                            <div class="step-name">VIOLATE</div>
+                        </div>
+                        <div class="pipeline-arrow">→</div>
+                        <div class="pipeline-step" id="step-cooldown">
+                            <div class="step-circle">5</div>
+                            <div class="step-name">COOLDOWN</div>
+                        </div>
+                    </div>
+
+                    <div class="watchdog-metrics-box">
+                        <div class="wd-stat">
+                            <span class="wd-label">Violations Count:</span>
+                            <span id="wd-violation-count" class="wd-val mono">0 / 3</span>
+                        </div>
+                        <div class="wd-stat">
+                            <span class="wd-label">Rollbacks Executed:</span>
+                            <span id="wd-rollback-count" class="wd-val mono">0</span>
+                        </div>
+                        <div class="wd-stat">
+                            <span class="wd-label">Safe Default Target:</span>
+                            <span class="wd-val mono text-accent">default (CFS/EEVDF)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Live Watchdog & Rollback Events -->
+                <div class="card events-card">
+                    <div class="card-header">
+                        <h2 class="card-title">Watchdog Event Stream</h2>
+                        <button class="btn btn-tiny" onclick="refreshEvents()">Refresh</button>
+                    </div>
+                    <div class="events-scroll" id="events-log-list">
+                        <div class="event-placeholder">No safety events recorded yet.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Section: Recent Switches Table -->
+        <section class="card history-card">
+            <div class="card-header">
+                <div>
+                    <h2 class="card-title">Scheduler Switch &amp; Adaptation Audit History</h2>
+                    <p class="card-desc">Immutable log of autonomous selections, manual switches, and watchdog rollbacks</p>
+                </div>
+                <button class="btn btn-tiny" onclick="refreshHistory()">Refresh History</button>
+            </div>
+            <div class="table-responsive">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>TIMESTAMP</th>
+                            <th>FROM</th>
+                            <th>TO</th>
+                            <th>REASON</th>
+                            <th>LATENCY AT SWITCH</th>
+                            <th>CPU AT SWITCH</th>
+                            <th>RESULT</th>
+                        </tr>
+                    </thead>
+                    <tbody id="switch-history-tbody">
+                        <tr>
+                            <td colspan="7" class="text-center text-muted">Awaiting scheduler transitions...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <div>
+                <b>AdaptiveSched</b> — Engineering OS Project Review 2 | Team: <b>Arjun Tyagi</b> (24BCE0605) &amp; <b>Aritra Ghosh</b> (24BCE0598)
+            </div>
+            <div class="footer-meta">
+                SCOPE, VIT Vellore • Linux Kernel sched_ext BPF Scheduler Framework
+            </div>
+        </footer>
+    </div>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

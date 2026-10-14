@@ -1,0 +1,20 @@
+# Balanced SLO Profile
+# General-purpose profile balancing latency and throughput
+profile: balanced
+constraints:
+  p99_latency_us:
+    max: 10000
+    weight: 0.4
+  context_switch_rate:
+    max: 80000
+    weight: 0.3
+  cpu_utilization:
+    max: 95
+    weight: 0.3
+evaluation:
+  window_seconds: 10
+  violation_threshold: 3
+  grace_period_seconds: 5
+rollback:
+  target: "default"
+  cooldown_seconds: 60

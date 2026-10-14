@@ -1,0 +1,20 @@
+# Interactive SLO Profile
+# Optimized for latency-sensitive workloads (gaming, UI, interactive apps)
+profile: interactive
+constraints:
+  p99_latency_us:
+    max: 5000
+    weight: 0.6
+  context_switch_rate:
+    max: 50000
+    weight: 0.2
+  cpu_utilization:
+    max: 90
+    weight: 0.2
+evaluation:
+  window_seconds: 10
+  violation_threshold: 3
+  grace_period_seconds: 5
+rollback:
+  target: "default"
+  cooldown_seconds: 60

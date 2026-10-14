@@ -1,0 +1,20 @@
+# Throughput SLO Profile
+# Optimized for batch processing workloads (compilation, data processing)
+profile: throughput
+constraints:
+  p99_latency_us:
+    max: 20000
+    weight: 0.2
+  context_switch_rate:
+    max: 100000
+    weight: 0.3
+  cpu_utilization:
+    max: 98
+    weight: 0.5
+evaluation:
+  window_seconds: 15
+  violation_threshold: 5
+  grace_period_seconds: 8
+rollback:
+  target: "default"
+  cooldown_seconds: 90
