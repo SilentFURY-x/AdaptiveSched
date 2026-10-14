@@ -124,6 +124,7 @@ Double-click `start_demo.bat` in the project root. This installs requirements, s
 ## 5. Review 2 Demo Script Walkthrough
 
 For a step-by-step presentation flow with dialogue and exact actions, refer to:
+- 💡 **[Simple Project Explanation (ELI5)](docs/SIMPLE_EXPLANATION.md)**: Plain-English explanation with analogies, zero jargon, and viva Q&A.
 - 📖 **[Presentation Script](docs/PRESENTATION_SCRIPT.md)**: Slide-by-slide 15-minute presentation script.
 - 📋 **[Demo Guide](docs/DEMO_GUIDE.md)**: Detailed test cases, expected terminal outputs, and spike demonstration.
 - 📐 **[Product Requirements Document (PRD)](docs/PRD.md)**: Full functional requirements, mathematical equations, and integration plan.
@@ -147,6 +148,7 @@ AdaptiveSched/
 │       ├── interactive.yaml
 │       └── throughput.yaml
 ├── docs/
+│   ├── SIMPLE_EXPLANATION.md    # Plain-English guide (ELI5 & Viva cheat-sheet)
 │   ├── PRD.md                   # Complete Product Requirements Document
 │   ├── DEMO_GUIDE.md            # Step-by-step demo instructions
 │   ├── PRESENTATION_SCRIPT.md   # Presentation script for Review 2
