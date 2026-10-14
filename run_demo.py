@@ -60,6 +60,7 @@ def main():
         app.run(host=host, port=port, debug=False, use_reloader=False)
     except KeyboardInterrupt:
         print("\n[AdaptiveSched] Shutting down demo cleanly...")
+    finally:
         engine.stop()
         print("[AdaptiveSched] Goodbye!")
 

@@ -2,7 +2,7 @@
 mode: "mock"  # "mock" | "real"
 
 agent:
-  implementation: "mock"  # "mock" | "ucb1" | "thompson" | "epsilon_greedy"
+  implementation: "ucb1"  # "mock" | "ucb1" | "thompson" | "epsilon_greedy"
   decision_interval_seconds: 5  # How often the agent makes decisions
   
 metrics:

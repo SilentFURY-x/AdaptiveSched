@@ -147,7 +147,6 @@ AdaptiveSched/
 │       ├── interactive.yaml
 │       └── throughput.yaml
 ├── docs/
-│   ├── SIMPLE_EXPLANATION.md    # Plain-English guide (ELI5 & Viva cheat-sheet)
 │   ├── PRD.md                   # Complete Product Requirements Document
 │   ├── DEMO_GUIDE.md            # Step-by-step demo instructions
 │   ├── PRESENTATION_SCRIPT.md   # Presentation script for Review 2

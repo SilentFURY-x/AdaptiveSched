@@ -12,13 +12,50 @@ let isPaused = false;
 let currentScheduler = 'default';
 let availableSchedulers = [];
 let updateInterval = null;
+let historyUpdateInterval = null;
 
 // Initialize on DOM Ready
 document.addEventListener('DOMContentLoaded', () => {
     initCharts();
+    initMotionSystem();
     fetchInitialData();
     updateInterval = setInterval(pollMetrics, 1000);
+    historyUpdateInterval = setInterval(() => {
+        refreshHistory();
+        refreshEvents();
+    }, 3000);
 });
+
+/* ---------------------------------------------------------
+   Motion: Lenis is the sole smooth-scroll engine; GSAP owns reveals.
+   Reduced-motion users keep native scrolling and see every final state.
+   --------------------------------------------------------- */
+function initMotionSystem() {
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion || !window.gsap || !window.ScrollTrigger) return;
+
+    const { gsap, ScrollTrigger } = window;
+    gsap.registerPlugin(ScrollTrigger);
+
+    let lenis = null;
+    let ticker = null;
+    if (window.Lenis) {
+        lenis = new window.Lenis({ duration: 0.85, smoothWheel: true, touchMultiplier: 1.15 });
+        lenis.on('scroll', ScrollTrigger.update);
+        ticker = (time) => lenis.raf(time * 1000);
+        gsap.ticker.add(ticker);
+        gsap.ticker.lagSmoothing(0);
+        window.__adaptiveSchedLenis = lenis;
+    }
+
+    window.addEventListener('pagehide', () => {
+        clearInterval(updateInterval);
+        clearInterval(historyUpdateInterval);
+        ScrollTrigger.getAll().forEach((trigger) => trigger.kill());
+        if (lenis) lenis.destroy();
+        if (ticker) gsap.ticker.remove(ticker);
+    }, { once: true });
+}
 
 /* ---------------------------------------------------------
    Chart Initialization
@@ -34,17 +71,17 @@ function initCharts() {
                 grid: { display: false }
             },
             y: {
-                grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } }
+                grid: { color: '#e3e8ed' },
+                ticks: { color: '#738091', font: { family: 'ui-monospace, Consolas, monospace', size: 10 } }
             }
         },
         plugins: {
             legend: { display: false },
             tooltip: {
-                backgroundColor: '#1e293b',
-                titleColor: '#f8fafc',
-                bodyColor: '#94a3b8',
-                borderColor: 'rgba(255, 255, 255, 0.1)',
+                backgroundColor: '#293746',
+                titleColor: '#ffffff',
+                bodyColor: '#d8e0e8',
+                borderColor: '#415263',
                 borderWidth: 1,
                 padding: 10
             }
@@ -59,10 +96,10 @@ function initCharts() {
             labels: [],
             datasets: [
                 {
-                    label: 'Latency (μs)',
+                    label: 'P99 workload latency (μs)',
                     data: [],
-                    borderColor: '#38bdf8',
-                    backgroundColor: 'rgba(56, 189, 248, 0.08)',
+                    borderColor: '#356da8',
+                    backgroundColor: 'rgba(53, 109, 168, 0.09)',
                     borderWidth: 2,
                     fill: true,
                     tension: 0.35,
@@ -72,7 +109,7 @@ function initCharts() {
                 {
                     label: 'SLO Ceiling (μs)',
                     data: [],
-                    borderColor: '#f43f5e',
+                    borderColor: '#c87535',
                     borderWidth: 1.5,
                     borderDash: [5, 5],
                     fill: false,
@@ -88,7 +125,7 @@ function initCharts() {
                     ...commonChartOptions.scales.y,
                     suggestedMin: 0,
                     suggestedMax: 6000,
-                    title: { display: true, text: 'Microseconds (μs)', color: '#64748b', font: { size: 10 } }
+                    title: { display: true, text: 'Microseconds (μs)', color: '#738091', font: { size: 10 } }
                 }
             }
         }
@@ -104,8 +141,8 @@ function initCharts() {
                 {
                     label: 'CPU (%)',
                     data: [],
-                    borderColor: '#a855f7',
-                    backgroundColor: 'rgba(168, 85, 247, 0.08)',
+                    borderColor: '#718096',
+                    backgroundColor: 'rgba(113, 128, 150, 0.09)',
                     borderWidth: 2,
                     yAxisID: 'yCPU',
                     fill: true,
@@ -115,7 +152,7 @@ function initCharts() {
                 {
                     label: 'Throughput (ops/s)',
                     data: [],
-                    borderColor: '#10b981',
+                    borderColor: '#4d82b6',
                     borderWidth: 2,
                     yAxisID: 'yThroughput',
                     fill: false,
@@ -133,15 +170,15 @@ function initCharts() {
                     position: 'left',
                     min: 0,
                     max: 100,
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                    ticks: { color: '#a855f7', font: { family: 'JetBrains Mono', size: 10 } }
+                    grid: { color: '#e3e8ed' },
+                    ticks: { color: '#718096', font: { family: 'ui-monospace, Consolas, monospace', size: 10 } }
                 },
                 yThroughput: {
                     type: 'linear',
                     position: 'right',
                     min: 0,
                     grid: { display: false },
-                    ticks: { color: '#10b981', font: { family: 'JetBrains Mono', size: 10 } }
+                    ticks: { color: '#4d82b6', font: { family: 'ui-monospace, Consolas, monospace', size: 10 } }
                 }
             }
         }
@@ -157,14 +194,14 @@ function initCharts() {
                 label: 'Estimated Reward',
                 data: [],
                 backgroundColor: [
-                    'rgba(56, 189, 248, 0.65)',
-                    'rgba(168, 85, 247, 0.65)',
-                    'rgba(16, 185, 129, 0.65)',
-                    'rgba(245, 158, 11, 0.65)',
-                    'rgba(100, 116, 139, 0.65)'
+                    'rgba(53, 109, 168, 0.78)',
+                    'rgba(75, 130, 182, 0.72)',
+                    'rgba(113, 128, 150, 0.70)',
+                    'rgba(200, 117, 53, 0.72)',
+                    'rgba(160, 171, 182, 0.72)'
                 ],
                 borderColor: [
-                    '#38bdf8', '#a855f7', '#10b981', '#f59e0b', '#64748b'
+                    '#356da8', '#4d82b6', '#718096', '#c87535', '#a0abb6'
                 ],
                 borderWidth: 1,
                 borderRadius: 4
@@ -174,14 +211,14 @@ function initCharts() {
             ...commonChartOptions,
             scales: {
                 x: {
-                    ticks: { color: '#94a3b8', font: { family: 'JetBrains Mono', size: 10 } },
+                    ticks: { color: '#657385', font: { family: 'ui-monospace, Consolas, monospace', size: 10 } },
                     grid: { display: false }
                 },
                 y: {
                     min: 0,
                     max: 1.0,
-                    ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 10 } },
-                    grid: { color: 'rgba(255, 255, 255, 0.05)' }
+                    ticks: { color: '#738091', font: { family: 'ui-monospace, Consolas, monospace', size: 10 } },
+                    grid: { color: '#e3e8ed' }
                 }
             }
         }
@@ -251,7 +288,6 @@ function updateStatusUI(status) {
     // Uptime & Cycles
     document.getElementById('uptime-val').textContent = formatSeconds(status.uptime_seconds || 0);
     document.getElementById('cycle-count-val').textContent = status.cycle_count || 0;
-
     // Active Scheduler
     currentScheduler = status.current_scheduler || 'default';
     document.getElementById('active-scheduler-name').textContent = currentScheduler;
@@ -275,13 +311,13 @@ function updateStatusUI(status) {
         document.getElementById('cpu-bar').style.width = Math.min(100, Math.max(0, cpu)) + '%';
         
         // Latency
-        const lat = Math.round(m.scheduling_latency_us || 0);
+        const lat = Math.round(m.p99_latency_us ?? m.scheduling_latency_us ?? 0);
         document.getElementById('latency-val').textContent = lat.toLocaleString();
         
         // Throughput & CS
         document.getElementById('throughput-val').textContent = Math.round(m.throughput_ops || 0).toLocaleString();
-        document.getElementById('cs-val').textContent = Math.round(m.context_switches_per_sec || 0).toLocaleString();
-        document.getElementById('run-queue-val').textContent = m.running_tasks || 0;
+        document.getElementById('cs-val').textContent = Math.round(m.context_switches || 0).toLocaleString();
+        document.getElementById('run-queue-val').textContent = Number(m.runqueue_length || 0).toFixed(1);
     }
 
     // SLO Compliance & Watchdog State
@@ -298,9 +334,30 @@ function updateStatusUI(status) {
 }
 
 function updateWatchdogPipeline(state, wd) {
+    const stateKeys = {
+        IDLE: 'idle',
+        GRACE_PERIOD: 'grace',
+        MONITORING: 'monitor',
+        VIOLATION_DETECTED: 'violation',
+        COOLDOWN: 'cooldown'
+    };
+    const stateKey = stateKeys[String(state || 'IDLE').toUpperCase()] || 'idle';
     const wdBadge = document.getElementById('watchdog-state-badge');
-    wdBadge.textContent = 'STATE: ' + state.toUpperCase();
-    wdBadge.className = 'state-badge state-' + state.toLowerCase();
+    wdBadge.textContent = 'STATE: ' + stateKey.toUpperCase();
+    wdBadge.className = 'state-badge state-' + (stateKey === 'monitor' ? 'monitoring' : stateKey);
+
+    const healthTag = document.getElementById('watchdog-health-tag');
+    healthTag.classList.remove('tag-success', 'tag-warning', 'tag-danger');
+    if (stateKey === 'violation') {
+        healthTag.textContent = 'SLO BREACH';
+        healthTag.classList.add('tag-danger');
+    } else if (stateKey === 'cooldown') {
+        healthTag.textContent = 'COOLDOWN';
+        healthTag.classList.add('tag-warning');
+    } else {
+        healthTag.textContent = 'HEALTHY';
+        healthTag.classList.add('tag-success');
+    }
 
     // Steps list
     const steps = ['idle', 'grace', 'monitor', 'violation', 'cooldown'];
@@ -308,7 +365,7 @@ function updateWatchdogPipeline(state, wd) {
         const el = document.getElementById('step-' + s);
         if (el) {
             el.classList.remove('active', 'step-violation-active');
-            if (s === state.toLowerCase()) {
+            if (s === stateKey) {
                 el.classList.add('active');
                 if (s === 'violation') {
                     el.classList.add('step-violation-active');
@@ -330,7 +387,7 @@ function updateChartsWithMetrics(metricsList) {
     if (!metricsList || metricsList.length === 0) return;
 
     const labels = metricsList.map(m => new Date(m.timestamp * 1000).toLocaleTimeString([], { hour12: false }));
-    const latencies = metricsList.map(m => m.scheduling_latency_us);
+    const latencies = metricsList.map(m => m.p99_latency_us ?? m.scheduling_latency_us ?? 0);
     const cpus = metricsList.map(m => m.cpu_utilization);
     const throughputs = metricsList.map(m => m.throughput_ops);
 
@@ -392,7 +449,7 @@ function renderSchedulerButtons(schedulers) {
     if (btnsEl) {
         btnsEl.innerHTML = schedulers.map(s => `
             <button class="btn-scheduler" id="btn-sched-${s}" onclick="manualSwitch('${s}')">
-                ⚡ ${s}
+                ${s}
             </button>
         `).join('');
     }
@@ -486,7 +543,7 @@ async function changeSloProfile(profileName) {
 /* ---------------------------------------------------------
    Spike & Anomaly Trigger
    --------------------------------------------------------- */
-async function triggerSpike(duration = 15) {
+async function triggerSpike(duration = 30) {
     try {
         const res = await fetch('/api/spike', {
             method: 'POST',
@@ -574,14 +631,15 @@ async function refreshEvents() {
 
         container.innerHTML = events.map(ev => {
             const time = new Date(ev.timestamp * 1000).toLocaleTimeString();
+            const eventType = ev.type || ev.event_type || 'info';
             let itemClass = 'event-info';
-            if (ev.event_type === 'violation') itemClass = 'event-violation';
-            if (ev.event_type === 'rollback') itemClass = 'event-rollback';
+            if (eventType.includes('violation')) itemClass = 'event-violation';
+            if (eventType.includes('rollback')) itemClass = 'event-rollback';
 
             return `
                 <div class="event-item ${itemClass}">
                     <div class="event-meta">
-                        <span>[${ev.event_type.toUpperCase()}]</span>
+                        <span>[${eventType.replaceAll('_', ' ').toUpperCase()}]</span>
                         <span class="mono">${time}</span>
                     </div>
                     <div class="event-msg">${ev.message || ev.details || 'Event logged'}</div>

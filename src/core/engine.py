@@ -66,28 +66,23 @@ class AdaptiveSchedEngine:
         schedulers = self._config.available_schedulers
         default = self._config.default_scheduler
         
-        # Scheduler Manager (always mock for now)
+        if self._config.mode != 'mock':
+            raise ValueError("This demo build supports mock mode only; real Linux integration is out of scope.")
+
         self._scheduler_manager: ISchedulerManager = MockSchedulerManager(
-            available=schedulers,
-            default=default,
+            available=schedulers, default=default,
         )
         
         # Metrics Collector
-        if self._config.mode == 'mock' or self._config.metrics_implementation == 'mock':
-            self._metrics_collector: IMetricsCollector = MockMetricsCollector(schedulers)
-        else:
-            # Placeholder for real implementation (Aritra)
-            self._metrics_collector = MockMetricsCollector(schedulers)
-            logger.warning("Real metrics collector not available, using mock")
+        self._metrics_collector: IMetricsCollector = MockMetricsCollector(schedulers)
         
         # Agent
         algorithm = self._config.agent_implementation
-        if self._config.mode == 'mock' or algorithm == 'mock':
+        if algorithm == 'mock':
             self._agent: ISchedulerAgent = MockBanditAgent(schedulers, algorithm)
         else:
-            # Placeholder for real implementation (Aritra)
-            self._agent = MockBanditAgent(schedulers, algorithm)
-            logger.warning("Real bandit agent not available, using mock")
+            from src.agent.agent_engine import BanditAgent
+            self._agent = BanditAgent(schedulers, algorithm)
         
         # Rollback Manager
         self._rollback_manager = RollbackManager(
@@ -135,6 +130,7 @@ class AdaptiveSchedEngine:
         Returns:
             True if rollback was successful.
         """
+        from_scheduler = self._scheduler_manager.get_current()
         success = self._rollback_manager.execute_rollback(reason)
         
         if success:
@@ -145,13 +141,14 @@ class AdaptiveSchedEngine:
                 )
             
             # Record the event
-            self._switch_history.append(SchedulerSwitchEvent(
-                from_scheduler=self._scheduler_manager.get_current(),
-                to_scheduler=self._rollback_manager.default_scheduler,
-                reason="slo_rollback",
-                metrics_at_switch=self._current_metrics,
-                result="rollback",
-            ))
+            if from_scheduler != self._rollback_manager.default_scheduler:
+                self._switch_history.append(SchedulerSwitchEvent(
+                    from_scheduler=from_scheduler,
+                    to_scheduler=self._rollback_manager.default_scheduler,
+                    reason="slo_rollback",
+                    metrics_at_switch=self._current_metrics,
+                    result="rollback",
+                ))
         
         return success
 
@@ -364,6 +361,17 @@ class AdaptiveSchedEngine:
         """
         agent_stats = self._agent.get_statistics()
         watchdog_state = self._watchdog.get_state()
+        agent_stats_dict = agent_stats.to_dict()
+        # Keep the dashboard's existing chart contract while exposing the
+        # canonical AgentStatistics names to CLI/API consumers.
+        agent_stats_dict['arm_estimates'] = agent_stats_dict.get('arm_rewards', {})
+        agent_stats_dict['arm_pulls'] = agent_stats_dict.get('arm_counts', {})
+        agent_stats_dict['total_switches'] = len(self._switch_history)
+        watchdog_dict = watchdog_state.to_dict()
+        watchdog_dict['violation_threshold'] = self._slo_profile.violation_threshold
+        watchdog_dict['total_rollbacks'] = sum(
+            1 for event in self._rollback_manager.get_history() if event.get('success')
+        )
         
         return {
             'running': self._running,
@@ -375,8 +383,8 @@ class AdaptiveSchedEngine:
             'slo_profile': self._slo_profile.name,
             'uptime_seconds': time.time() - self._start_time if self._running else 0,
             'cycle_count': self._cycle_count,
-            'agent_stats': agent_stats.to_dict(),
-            'watchdog': watchdog_state.to_dict(),
+            'agent_stats': agent_stats_dict,
+            'watchdog': watchdog_dict,
             'compliance': self._watchdog.compliance_score,
             'current_metrics': self._current_metrics.to_dict() if self._current_metrics else None,
             'health': self._health_checker.check(self._current_metrics) if self._current_metrics else {'healthy': True, 'issues': [], 'severity': 'ok'},
