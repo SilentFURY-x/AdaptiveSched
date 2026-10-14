@@ -3,20 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AdaptiveSched — Autonomous CPU Scheduler Engine</title>
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>AdaptiveSched — Scheduler Control Room</title>
+    <meta name="description" content="AdaptiveSched demo console for scheduler telemetry, bandit policy selection, and SLO rollback.">
+    <meta name="theme-color" content="#eef1f4">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/lenis@1.1.20/dist/lenis.css">
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="/static/css/dashboard.css">
 </head>
 <body class="dark-theme">
-    <!-- Ambient Background Lighting -->
-    <div class="ambient-glow glow-1"></div>
-    <div class="ambient-glow glow-2"></div>
-
+    <a class="skip-link" href="#main-content">Skip to dashboard</a>
     <div class="app-container">
         <!-- Top Navigation -->
         <header class="app-header">
@@ -31,7 +27,7 @@
                     </div>
                     <div>
                         <div class="brand-title">Adaptive<span class="gradient-text">Sched</span></div>
-                        <div class="brand-subtitle">Online Bandit Learning &amp; SLO-Aware Rollback</div>
+                        <div class="brand-subtitle">SCHEDULER DEMO CONSOLE</div>
                     </div>
                 </div>
                 <div class="badge-group">
@@ -54,12 +50,25 @@
                     <button id="btn-pause-resume" class="btn btn-outline" onclick="togglePauseResume()">
                         <span id="pause-icon">⏸</span> <span id="pause-text">Pause Agent</span>
                     </button>
-                    <button id="btn-trigger-spike" class="btn btn-danger" onclick="triggerSpike()">
-                        <span>⚡</span> Inject Workload Spike
+                    <button id="btn-trigger-spike" class="btn btn-danger" onclick="triggerSpike()" aria-label="Simulate a workload spike">
+                        <span aria-hidden="true">↗</span> Simulate spike
                     </button>
                 </div>
             </div>
         </header>
+
+        <main id="main-content">
+        <section class="page-intro" aria-labelledby="page-title">
+            <div>
+                <p class="intro-eyebrow">ADAPTIVESCHED / MOCK INSTANCE</p>
+                <h1 id="page-title">Scheduler overview</h1>
+                <p class="intro-description">Review policy performance and SLO status. Metrics are simulated; the kernel scheduler is unchanged.</p>
+            </div>
+            <nav class="intro-links" aria-label="Dashboard sections">
+                <a href="#performance">Performance charts <span aria-hidden="true">↓</span></a>
+                <a href="#controls">Scheduler controls <span aria-hidden="true">↓</span></a>
+            </nav>
+        </section>
 
         <!-- KPI Summary Cards -->
         <section class="kpi-grid">
@@ -67,7 +76,7 @@
             <div class="card kpi-card kpi-card-highlight">
                 <div class="kpi-header">
                     <span class="kpi-title">ACTIVE SCHEDULER</span>
-                    <span class="kpi-icon">⚙</span>
+                    <span class="kpi-icon" aria-hidden="true">01</span>
                 </div>
                 <div class="kpi-main">
                     <div id="active-scheduler-name" class="kpi-value text-accent">default</div>
@@ -83,7 +92,7 @@
             <div class="card kpi-card">
                 <div class="kpi-header">
                     <span class="kpi-title">CPU UTILIZATION</span>
-                    <span class="kpi-icon">📈</span>
+                    <span class="kpi-icon" aria-hidden="true">02</span>
                 </div>
                 <div class="kpi-main">
                     <div class="kpi-value-group">
@@ -100,8 +109,8 @@
             <!-- Latency Card -->
             <div class="card kpi-card">
                 <div class="kpi-header">
-                    <span class="kpi-title">SCHEDULING LATENCY (P99)</span>
-                    <span class="kpi-icon">⏱</span>
+                    <span class="kpi-title">WORKLOAD LATENCY (P99)</span>
+                    <span class="kpi-icon" aria-hidden="true">03</span>
                 </div>
                 <div class="kpi-main">
                     <div class="kpi-value-group">
@@ -113,24 +122,24 @@
                         <span id="latency-status-tag" class="tag tag-success">COMPLIANT</span>
                     </div>
                 </div>
-                <div class="kpi-subtext" id="latency-meta">Kernel queue wait &amp; context switch</div>
+                <div class="kpi-subtext" id="latency-meta">Simulated tail latency for the active scheduler</div>
             </div>
 
             <!-- Throughput Card -->
             <div class="card kpi-card">
                 <div class="kpi-header">
                     <span class="kpi-title">SYSTEM THROUGHPUT</span>
-                    <span class="kpi-icon">⚡</span>
+                    <span class="kpi-icon" aria-hidden="true">04</span>
                 </div>
                 <div class="kpi-main">
                     <div class="kpi-value-group">
                         <span id="throughput-val" class="kpi-value mono">0</span>
                         <span class="unit">ops/s</span>
                     </div>
-                    <div class="kpi-subtext" id="throughput-meta">Context switches: <span id="cs-val" class="mono">0</span>/s</div>
+                    <div class="kpi-subtext" id="throughput-meta">Context switches/sample: <span id="cs-val" class="mono">0</span></div>
                 </div>
                 <div class="metric-mini-stats">
-                    <span>Task Queued: <b id="run-queue-val" class="mono">0</b></span>
+                    <span>Run queue: <b id="run-queue-val" class="mono">0</b></span>
                 </div>
             </div>
 
@@ -138,11 +147,11 @@
             <div class="card kpi-card">
                 <div class="kpi-header">
                     <span class="kpi-title">SLO COMPLIANCE</span>
-                    <span class="kpi-icon">🛡</span>
+                    <span class="kpi-icon" aria-hidden="true">05</span>
                 </div>
                 <div class="kpi-main">
                     <div class="kpi-value-group">
-                        <span id="slo-score-val" class="kpi-value mono text-emerald">100.0</span>
+                        <span id="slo-score-val" class="kpi-value mono text-accent">100.0</span>
                         <span class="unit">%</span>
                     </div>
                     <div id="watchdog-state-badge" class="state-badge state-idle">STATE: IDLE</div>
@@ -152,23 +161,23 @@
         </section>
 
         <!-- Main Workspace (Grid 2:1) -->
-        <div class="content-grid">
+        <div class="content-grid" id="performance">
             <!-- Left Column: Charts -->
             <div class="charts-column">
                 <!-- Latency & Throughput Stream -->
                 <div class="card chart-card">
                     <div class="card-header">
                         <div class="card-header-left">
-                            <h2 class="card-title">Real-Time Scheduling Latency (P99) &amp; SLO Ceiling</h2>
-                            <p class="card-desc">Evaluated dynamically against the active Service Level Objective</p>
+                            <h2 class="card-title">P99 Workload Latency &amp; SLO Ceiling</h2>
+                            <p class="card-desc">Simulated scheduler response against the active objective</p>
                         </div>
                         <div class="chart-controls">
-                            <span class="chart-legend-indicator" style="background: #38bdf8;"></span> Latency (μs)
-                            <span class="chart-legend-indicator" style="background: #f43f5e; margin-left: 10px;"></span> SLO Max
+                            <span class="chart-legend-indicator" style="background: #356da8;"></span> Latency (μs)
+                            <span class="chart-legend-indicator" style="background: #c87535; margin-left: 10px;"></span> SLO Max
                         </div>
                     </div>
                     <div class="chart-container">
-                        <canvas id="latencyChart"></canvas>
+                        <canvas id="latencyChart" role="img" aria-label="Recent P99 scheduling latency compared with the active SLO ceiling"></canvas>
                     </div>
                 </div>
 
@@ -177,15 +186,15 @@
                     <div class="card-header">
                         <div class="card-header-left">
                             <h2 class="card-title">CPU Utilization &amp; Workload Throughput</h2>
-                            <p class="card-desc">Tracks scheduling overhead and execution efficiency across decision cycles</p>
+                            <p class="card-desc">CPU load and completed mock operations, sampled each cycle</p>
                         </div>
                         <div class="chart-controls">
-                            <span class="chart-legend-indicator" style="background: #a855f7;"></span> CPU %
-                            <span class="chart-legend-indicator" style="background: #10b981; margin-left: 10px;"></span> Ops/sec
+                            <span class="chart-legend-indicator" style="background: #718096;"></span> CPU %
+                            <span class="chart-legend-indicator" style="background: #4d82b6; margin-left: 10px;"></span> Ops/sec
                         </div>
                     </div>
                     <div class="chart-container">
-                        <canvas id="systemChart"></canvas>
+                        <canvas id="systemChart" role="img" aria-label="Recent CPU utilization and workload throughput"></canvas>
                     </div>
                 </div>
 
@@ -193,18 +202,18 @@
                 <div class="card chart-card">
                     <div class="card-header">
                         <div class="card-header-left">
-                            <h2 class="card-title">Bandit Learning Dynamics — Arm Estimated Rewards</h2>
-                            <p class="card-desc">Online UCB1 exploration vs. exploitation scores per scheduler</p>
+                            <h2 class="card-title">Policy Learning — Estimated Reward by Scheduler</h2>
+                            <p class="card-desc">Mean reward estimate and selection count for each scheduler</p>
                         </div>
                     </div>
                     <div class="chart-container chart-container-sm">
-                        <canvas id="banditChart"></canvas>
+                        <canvas id="banditChart" role="img" aria-label="Estimated bandit rewards for available schedulers"></canvas>
                     </div>
                 </div>
             </div>
 
             <!-- Right Column: Control & Safety Watchdog -->
-            <div class="controls-column">
+            <div class="controls-column" id="controls">
                 <!-- Control Panel -->
                 <div class="card control-card">
                     <div class="card-header">
@@ -243,7 +252,7 @@
                         <label class="control-label">Safety Anomaly Simulator</label>
                         <p class="control-help">Injects an immediate burst/latency spike to trigger SLO breach and verify automatic rollback to safe default.</p>
                         <button class="btn btn-warning w-100" onclick="triggerSpike(15)">
-                            ⚡ Inject 15s Latency Spike (Simulate Thrashing)
+                            Simulate 15s workload spike <span aria-hidden="true">↗</span>
                         </button>
                     </div>
                 </div>
@@ -252,7 +261,7 @@
                 <div class="card watchdog-card">
                     <div class="card-header">
                         <h2 class="card-title">SLO Watchdog State Machine</h2>
-                        <span id="watchdog-health-tag" class="tag tag-success">HEALTHY</span>
+                        <span id="watchdog-health-tag" class="tag tag-success" aria-live="polite">HEALTHY</span>
                     </div>
 
                     <div class="state-pipeline">
@@ -316,7 +325,7 @@
             <div class="card-header">
                 <div>
                     <h2 class="card-title">Scheduler Switch &amp; Adaptation Audit History</h2>
-                    <p class="card-desc">Immutable log of autonomous selections, manual switches, and watchdog rollbacks</p>
+                    <p class="card-desc">Recent agent selections, manual overrides, and watchdog rollbacks</p>
                 </div>
                 <button class="btn btn-tiny" onclick="refreshHistory()">Refresh History</button>
             </div>
@@ -345,17 +354,21 @@
         <!-- Footer -->
         <footer class="app-footer">
             <div>
-                <b>AdaptiveSched</b> — Engineering OS Project Review 2 | Team: <b>Arjun Tyagi</b> (24BCE0605) &amp; <b>Aritra Ghosh</b> (24BCE0598)
+                <b>AdaptiveSched</b> — Adaptive scheduler selection with SLO-aware rollback.
             </div>
             <div class="footer-meta">
-                SCOPE, VIT Vellore • Linux Kernel sched_ext BPF Scheduler Framework
+                Mock implementation · sched_ext is not enabled
             </div>
         </footer>
     </div>
+    </main>
 
     <!-- Notification Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
-    <script src="/static/js/dashboard.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.20/dist/lenis.min.js" defer></script>
+    <script src="/static/js/dashboard.js" defer></script>
 </body>
 </html>

@@ -82,7 +82,7 @@ def trigger_spike():
     if not _engine:
         return jsonify({'error': 'Engine not initialized'}), 503
     data = request.get_json() or {}
-    duration = data.get('duration', 20.0)
+    duration = data.get('duration', 30.0)
     _engine.trigger_spike(duration)
     return jsonify({'success': True, 'message': f'Spike triggered ({duration}s)'})
 

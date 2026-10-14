@@ -250,6 +250,13 @@ class SLOWatchdog:
         Returns:
             True if not in cooldown or grace period.
         """
+        # Let the selected scheduler complete its grace period and collect
+        # consecutive samples after a violation. Switching in either state
+        # would restart grace / clear the violation streak and undermine the
+        # rollback threshold.
+        if self._state in (self.STATE_GRACE_PERIOD, self.STATE_VIOLATION_DETECTED):
+            return False
+
         if self._state == self.STATE_COOLDOWN:
             elapsed = time.time() - self._cooldown_start
             if elapsed < self._profile.cooldown_seconds:
