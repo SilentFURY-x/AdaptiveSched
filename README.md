@@ -125,7 +125,6 @@ Double-click `start_demo.bat` in the project root. This installs requirements, s
 
 For a step-by-step presentation flow with dialogue and exact actions, refer to:
 - 💡 **[Simple Project Explanation (ELI5)](docs/SIMPLE_EXPLANATION.md)**: Plain-English explanation with analogies, zero jargon, and viva Q&A.
-- 📖 **[Presentation Script](docs/PRESENTATION_SCRIPT.md)**: Slide-by-slide 15-minute presentation script.
 - 📋 **[Demo Guide](docs/DEMO_GUIDE.md)**: Detailed test cases, expected terminal outputs, and spike demonstration.
 - 📐 **[Product Requirements Document (PRD)](docs/PRD.md)**: Full functional requirements, mathematical equations, and integration plan.
 - 🛠 **[Aritra's Development Plan](docs/ARITRA_PLAN.md)**: Actionable instructions for Module A development.
@@ -177,6 +176,5 @@ AdaptiveSched/
 - **Arjun Tyagi** (Registration No: `24BCE0605`)
 - **Aritra Ghosh** (Registration No: `24BCE0598`)
 
-Department of Computer Science and Engineering  
 School of Computer Science and Engineering (SCOPE)  
 Vellore Institute of Technology (VIT), Vellore, India
