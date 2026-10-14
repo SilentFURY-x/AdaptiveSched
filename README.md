@@ -12,6 +12,14 @@
 
 ---
 
+## 0. Refer To these Docs for In-Depth
+
+- [Demo Guide](docs/DEMO_GUIDE.md): Detailed test cases, expected terminal outputs, and spike demonstration.
+- [Product Requirements Document (PRD)](docs/PRD.md): Full functional requirements, mathematical equations, and integration plan.
+- [Aritra's Development Plan](docs/ARITRA_PLAN.md): Actionable instructions for Module A development.
+
+---
+
 ## 1. Executive Summary
 
 Modern operating systems rely on a single, fixed-policy CPU scheduler (e.g., CFS or EEVDF in Linux). However, diverse computing workloads—ranging from ultra-low-latency gaming and real-time audio to high-throughput compilation and database servers—exhibit fundamentally conflicting scheduling requirements.
