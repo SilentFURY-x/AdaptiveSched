@@ -1,5 +1,7 @@
 # Aritra's Implementation Plan — Module A: Bandit Agent + Metrics Collector
 
+> **Historical plan.** The algorithms and reward computation below have since been implemented in Python, and the repository now includes an initial Python procfs collector and process-based Linux sched_ext manager. The original C/perf collector and ctypes bridge remain future work. See [MVP_STATUS.md](MVP_STATUS.md) for current status and limitations; this document is retained as the original task plan, not a current checklist.
+
 > **Teammate:** Aritra Ghosh (24BCE0598)  
 > **Module:** Bandit Agent + Metrics Collector  
 > **Deadline:** Before Review 3  

@@ -266,6 +266,28 @@ function updateStatusUI(status) {
 
     // Header Badges
     document.getElementById('system-mode-badge').textContent = (status.mode || 'mock').toUpperCase() + ' MODE';
+    const isReal = status.mode === 'real';
+    document.getElementById('instance-eyebrow').textContent = `ADAPTIVESCHED / ${isReal ? 'LINUX' : 'MOCK'} INSTANCE`;
+    document.getElementById('instance-description').textContent = isReal
+        ? 'Live Linux procfs measurements. Only metrics available from the collector are shown; throughput and p99 latency require workload-specific probes.'
+        : 'Review policy performance and SLO status. Metrics are simulated; the kernel scheduler is unchanged.';
+    document.getElementById('latency-title').textContent = isReal ? 'AVERAGE RUN-QUEUE WAIT' : 'WORKLOAD LATENCY (P99)';
+    document.getElementById('latency-chart-title').textContent = isReal ? 'Average Run-Queue Wait & SLO Ceiling' : 'P99 Workload Latency & SLO Ceiling';
+    document.getElementById('latency-legend').textContent = isReal ? 'Average wait (μs)' : 'P99 latency (μs)';
+    document.getElementById('latency-meta').textContent = isReal
+        ? 'Average scheduler run-queue wait from procfs; this is not a p99 measurement'
+        : 'Simulated tail latency for the active scheduler';
+    document.getElementById('cpu-meta').textContent = isReal
+        ? 'Host CPU utilization sampled from /proc/stat'
+        : 'Load balance across 8 mock cores';
+    document.getElementById('profile-latency-label').textContent = isReal ? 'Max Average Wait:' : 'Max P99 Latency:';
+    document.getElementById('system-chart-description').textContent = isReal
+        ? 'Live CPU utilization; throughput is unavailable without a workload probe'
+        : 'CPU load and completed mock operations, sampled each cycle';
+    if (latencyChart) latencyChart.data.datasets[0].label = isReal ? 'Average run-queue wait (μs)' : 'P99 workload latency (μs)';
+    const spikeButton = document.getElementById('btn-trigger-spike');
+    spikeButton.disabled = isReal;
+    spikeButton.title = isReal ? 'Spike injection is available in mock mode only' : 'Simulate a workload spike';
     document.getElementById('system-algo-badge').textContent = 'ALGO: ' + (status.algorithm || 'ucb1').toUpperCase();
     
     isPaused = status.paused;
@@ -311,11 +333,13 @@ function updateStatusUI(status) {
         document.getElementById('cpu-bar').style.width = Math.min(100, Math.max(0, cpu)) + '%';
         
         // Latency
-        const lat = Math.round(m.p99_latency_us ?? m.scheduling_latency_us ?? 0);
-        document.getElementById('latency-val').textContent = lat.toLocaleString();
+        const unavailable = m.unavailable_metrics || [];
+        const latencyName = unavailable.includes('p99_latency_us') ? 'scheduling_latency_us' : 'p99_latency_us';
+        const latency = unavailable.includes(latencyName) ? null : m[latencyName];
+        document.getElementById('latency-val').textContent = latency == null ? '—' : Math.round(latency).toLocaleString();
         
         // Throughput & CS
-        document.getElementById('throughput-val').textContent = Math.round(m.throughput_ops || 0).toLocaleString();
+        document.getElementById('throughput-val').textContent = unavailable.includes('throughput_ops') ? '—' : Math.round(m.throughput_ops || 0).toLocaleString();
         document.getElementById('cs-val').textContent = Math.round(m.context_switches || 0).toLocaleString();
         document.getElementById('run-queue-val').textContent = Number(m.runqueue_length || 0).toFixed(1);
     }
@@ -387,9 +411,13 @@ function updateChartsWithMetrics(metricsList) {
     if (!metricsList || metricsList.length === 0) return;
 
     const labels = metricsList.map(m => new Date(m.timestamp * 1000).toLocaleTimeString([], { hour12: false }));
-    const latencies = metricsList.map(m => m.p99_latency_us ?? m.scheduling_latency_us ?? 0);
+    const latencies = metricsList.map(m => {
+        const unavailable = m.unavailable_metrics || [];
+        const name = unavailable.includes('p99_latency_us') ? 'scheduling_latency_us' : 'p99_latency_us';
+        return unavailable.includes(name) ? null : m[name];
+    });
     const cpus = metricsList.map(m => m.cpu_utilization);
-    const throughputs = metricsList.map(m => m.throughput_ops);
+    const throughputs = metricsList.map(m => (m.unavailable_metrics || []).includes('throughput_ops') ? null : m.throughput_ops);
 
     // Retrieve active profile target latency (default 5000 if not loaded)
     const targetLatency = window._activeSloMaxLatency || 5000;
@@ -412,9 +440,12 @@ function updateChartsWithMetrics(metricsList) {
     }
 
     // Update latency compliance status tag
-    const latestLatency = latencies[latencies.length - 1] || 0;
+    const latestLatency = latencies[latencies.length - 1];
     const latTag = document.getElementById('latency-status-tag');
-    if (latestLatency > targetLatency) {
+    if (latestLatency == null) {
+        latTag.className = 'tag tag-warning';
+        latTag.textContent = 'UNAVAILABLE';
+    } else if (latestLatency > targetLatency) {
         latTag.className = 'tag tag-danger';
         latTag.textContent = 'VIOLATION';
     } else {

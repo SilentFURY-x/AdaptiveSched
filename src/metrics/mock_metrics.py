@@ -144,6 +144,7 @@ class MockMetricsCollector(IMetricsCollector):
             timestamp=time.time(),
             cpu_utilization=min(100, _sample('cpu_utilization')),
             context_switches=int(_sample('context_switches')),
+            context_switch_rate=_sample('context_switches'),
             scheduling_latency_us=_sample('scheduling_latency_us'),
             ipc=max(0.1, _sample('ipc')),
             cache_miss_rate=min(1.0, max(0, _sample('cache_miss_rate'))),

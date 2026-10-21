@@ -5,6 +5,7 @@ against live system metrics.
 """
 
 from typing import Dict, List, Optional, Tuple
+import math
 from src.core.models import SystemMetrics, SLOViolation
 
 
@@ -20,8 +21,12 @@ class SLOConstraint:
             weight: Importance weight for compliance scoring.
         """
         self.name = name
-        self.max_value = max_value
-        self.weight = weight
+        self.max_value = float(max_value)
+        self.weight = float(weight)
+        if not math.isfinite(self.max_value) or self.max_value <= 0:
+            raise ValueError(f"SLO maximum for {name} must be finite and positive")
+        if not math.isfinite(self.weight) or self.weight < 0:
+            raise ValueError(f"SLO weight for {name} must be finite and non-negative")
 
     def evaluate(self, metrics: SystemMetrics) -> Tuple[bool, float]:
         """Evaluate this constraint against current metrics.
@@ -36,13 +41,15 @@ class SLOConstraint:
         metric_map = {
             'p99_latency_us': metrics.p99_latency_us,
             'scheduling_latency_us': metrics.scheduling_latency_us,
-            'context_switch_rate': metrics.context_switches,
+            'context_switch_rate': metrics.context_switch_rate,
             'cpu_utilization': metrics.cpu_utilization,
             'cache_miss_rate': metrics.cache_miss_rate,
             'runqueue_length': metrics.runqueue_length,
         }
         
-        actual = metric_map.get(self.name, 0.0)
+        if self.name in metrics.unavailable_metrics or self.name not in metric_map:
+            return False, math.nan
+        actual = metric_map[self.name]
         return (actual <= self.max_value, actual)
 
     def __repr__(self) -> str:
@@ -63,7 +70,11 @@ class SLOProfile:
         
         # Parse constraints
         constraints_data = profile_data.get('constraints', {})
+        supported = {'p99_latency_us', 'scheduling_latency_us', 'context_switch_rate',
+                     'cpu_utilization', 'cache_miss_rate', 'runqueue_length'}
         for metric_name, config in constraints_data.items():
+            if metric_name not in supported:
+                raise ValueError(f"Unsupported SLO metric: {metric_name!r}")
             self.constraints.append(SLOConstraint(
                 name=metric_name,
                 max_value=config.get('max', float('inf')),
@@ -72,14 +83,22 @@ class SLOProfile:
         
         # Evaluation parameters
         eval_config = profile_data.get('evaluation', {})
-        self.window_seconds: float = eval_config.get('window_seconds', 10)
-        self.violation_threshold: int = eval_config.get('violation_threshold', 3)
-        self.grace_period_seconds: float = eval_config.get('grace_period_seconds', 5)
+        self.window_seconds = float(eval_config.get('window_seconds', 10))
+        self.violation_threshold = int(eval_config.get('violation_threshold', 3))
+        self.grace_period_seconds = float(eval_config.get('grace_period_seconds', 5))
         
         # Rollback parameters
         rollback_config = profile_data.get('rollback', {})
         self.rollback_target: str = rollback_config.get('target', 'default')
-        self.cooldown_seconds: float = rollback_config.get('cooldown_seconds', 60)
+        self.cooldown_seconds = float(rollback_config.get('cooldown_seconds', 60))
+        if not self.constraints or not any(c.weight > 0 for c in self.constraints):
+            raise ValueError("SLO profile must define constraints with at least one positive weight")
+        if (not math.isfinite(self.window_seconds) or self.window_seconds <= 0
+                or self.violation_threshold < 1):
+            raise ValueError("SLO window_seconds and violation_threshold must be positive and finite")
+        if (not math.isfinite(self.grace_period_seconds) or self.grace_period_seconds < 0
+                or not math.isfinite(self.cooldown_seconds) or self.cooldown_seconds < 0):
+            raise ValueError("SLO grace and cooldown durations must be finite and non-negative")
 
     def evaluate(self, metrics: SystemMetrics, scheduler: str) -> Tuple[bool, float, List[SLOViolation]]:
         """Evaluate all constraints against current metrics.
@@ -96,11 +115,13 @@ class SLOProfile:
         """
         violations = []
         weighted_score = 0.0
-        total_weight = 0.0
+        available_weight = 0.0
         
         for constraint in self.constraints:
             satisfied, actual = constraint.evaluate(metrics)
-            total_weight += constraint.weight
+            if math.isnan(actual):
+                continue
+            available_weight += constraint.weight
             
             if satisfied:
                 # Score based on how far under the limit we are
@@ -114,8 +135,8 @@ class SLOProfile:
                     scheduler=scheduler,
                 ))
         
-        all_satisfied = len(violations) == 0
-        compliance = (weighted_score / total_weight * 100) if total_weight > 0 else 100.0
+        all_satisfied = len(violations) == 0 and available_weight > 0
+        compliance = (weighted_score / available_weight * 100) if available_weight > 0 else 0.0
         
         return all_satisfied, compliance, violations
 

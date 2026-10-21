@@ -6,6 +6,8 @@
 > **Date:** October 14, 2026  
 > **Version:** 2.0 (Review 2)
 
+> **Implementation status update (October 21, 2026):** This PRD began as a plan. The current code status is in [MVP_STATUS.md](MVP_STATUS.md), which takes precedence over the historical plan and examples below. UCB1, Thompson Sampling, epsilon-greedy, and reward computation are implemented. The project now has a Python procfs collector and a Linux `scx_*` process manager, but Linux real mode has not yet been validated on a supported Linux host. The procfs MVP does not measure workload p99 latency or throughput; older p99 examples below refer to the mock/demo requirement unless stated otherwise.
+
 ---
 
 ## 1. Executive Summary
@@ -220,30 +222,23 @@ adaptivesched stop
 
 | Task | Priority | Status |
 |------|----------|--------|
-| Project scaffolding & architecture | P0 | ✅ Building now |
-| SLO configuration system | P0 | ✅ Building now |
-| Watchdog engine with violation detection | P0 | ✅ Building now |
-| Rollback mechanism | P0 | ✅ Building now |
-| Health checker | P0 | ✅ Building now |
-| CLI with all commands | P0 | ✅ Building now |
-| Web Dashboard (Flask + Chart.js) | P0 | ✅ Building now |
-| REST API for metrics/control | P0 | ✅ Building now |
-| Mock mode for demo | P0 | ✅ Building now |
-| Integration interfaces (stubs for Aritra) | P0 | ✅ Building now |
+| Project scaffolding & architecture | P0 | Implemented |
+| SLO configuration and rolling-window watchdog | P0 | Implemented; Linux and test validation pending |
+| Rollback mechanism and health checker | P0 | Implemented; Linux recovery validation pending |
+| CLI and dashboard/API | P0 | Implemented for mock MVP; real-mode behavior requires Linux validation |
+| Mock mode for demo | P0 | Implemented |
+| Module interfaces | P0 | Implemented |
 
 ### 5.2 Aritra's Scope (Module A — Separate Plan)
 
 | Task | Priority | Status |
 |------|----------|--------|
-| C metrics collector (`/proc`, `perf_event`) | P0 | 📋 Planned |
-| Python-C bridge via `ctypes` | P0 | 📋 Planned |
-| UCB1 bandit algorithm | P0 | 📋 Planned |
-| Thompson Sampling algorithm | P1 | 📋 Planned |
-| ε-greedy algorithm | P1 | 📋 Planned |
-| Reward computation module | P0 | 📋 Planned |
-| Agent engine (main loop) | P0 | 📋 Planned |
-| sched_ext loader integration | P1 | 📋 Planned |
-| Unit tests for bandit algorithms | P1 | 📋 Planned |
+| Python procfs metrics collector | P0 | Implemented; Linux host validation pending |
+| C/perf collector and `ctypes` bridge | P1 | Not implemented; future enhancement |
+| UCB1, Thompson Sampling, and ε-greedy | P0/P1 | Implemented in Python |
+| Reward computation and bandit agent | P0 | Implemented in Python |
+| Linux sched_ext process manager | P1 | MVP implemented; host switching and recovery validation pending |
+| Unit tests for collector, algorithms, watchdog, engine, and API | P1 | 13 tests pass; Linux host integration remains untested |
 
 ---
 
@@ -296,7 +291,7 @@ metrics:
   implementation: "mock"  # "mock" | "proc" | "perf"
 ```
 
-When Aritra's code is ready, simply change `mode: "real"` and the system uses real implementations.
+For the current Linux MVP, use `--mode real` as described in `MVP_STATUS.md`. It uses procfs measurements and installed foreground `scx_*` binaries, not a C/perf bridge. A supported Linux host and privileges are required; changing the mode on Windows is not supported.
 
 ---
 
@@ -420,7 +415,7 @@ AdaptiveSched/
 │
 └── docs/                        # Documentation
     ├── PRD.md                   # This document
-    ├── PRESENTATION_SCRIPT.md   # Review 2 presentation
+    ├── MVP_STATUS.md            # Current implementation status and limits
     ├── DEMO_GUIDE.md            # Demo tutorial
     ├── ARITRA_PLAN.md           # Aritra's implementation plan
     └── ARCHITECTURE.md          # Detailed architecture doc

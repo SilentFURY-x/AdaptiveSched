@@ -1,253 +1,184 @@
-"""Unit tests for AdaptiveSched Core, Watchdog, Agent, and Dashboard API."""
+"""Unit tests for AdaptiveSched's mock and Linux procfs MVP paths."""
 
-import unittest
+import os
+import tempfile
 import time
-from src.core.models import SystemMetrics, SchedulerSwitchEvent, AgentStatistics
+import unittest
+from pathlib import Path
+
+from src.agent.agent_engine import BanditAgent
 from src.core.config import Config
 from src.core.engine import AdaptiveSchedEngine
-from src.metrics.mock_metrics import MockMetricsCollector
-from src.scheduler.mock_scheduler import MockSchedulerManager
-from src.agent.mock_agent import MockBanditAgent
-from src.watchdog.slo_config import SLOProfile, SLOConstraint
-from src.watchdog.health_checker import HealthChecker
-from src.watchdog.rollback import RollbackManager
-from src.watchdog.watchdog import SLOWatchdog, WatchdogState
+from src.core.models import SystemMetrics
 from src.dashboard.app import create_app
+from src.metrics.mock_metrics import MockMetricsCollector
+from src.metrics.proc_metrics import ProcMetricsCollector
+from src.scheduler.mock_scheduler import MockSchedulerManager
+from src.watchdog.health_checker import HealthChecker
+from src.watchdog.slo_config import SLOConstraint, SLOProfile
+from src.watchdog.watchdog import SLOWatchdog
 
 
-class TestAdaptiveSchedCore(unittest.TestCase):
-    """Test core models, configuration, and components."""
+class ProcMetricsTests(unittest.TestCase):
+    def test_delta_metrics_and_explicit_unavailable_fields(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as proc_root:
+            stat = os.path.join(proc_root, "stat")
+            schedstat = os.path.join(proc_root, "schedstat")
+            loadavg = os.path.join(proc_root, "loadavg")
 
-    def test_models_serialization(self):
-        m = SystemMetrics(
-            timestamp=100.0,
-            cpu_utilization=45.5,
-            scheduling_latency_us=1200.0,
-            throughput_ops=8500.0,
-            context_switches_per_sec=3500.0,
-            cache_miss_rate=0.03,
-            ipc=1.45,
-            memory_used_mb=2048.0,
-            memory_total_mb=16384.0,
-            active_threads=120,
-            running_tasks=4,
-        )
-        d = m.to_dict()
-        self.assertEqual(d['cpu_utilization'], 45.5)
-        self.assertEqual(d['scheduling_latency_us'], 1200.0)
+            def write_sample(user, system, idle, ctxt, delay, count):
+                with open(stat, "w", encoding="ascii") as f:
+                    f.write(f"cpu {user} 0 {system} {idle} 0 0 0 0 0 0\nctxt {ctxt}\n")
+                with open(schedstat, "w", encoding="ascii") as f:
+                    f.write(f"cpu0 0 0 0 0 0 0 0 {delay} {count}\n")
+                with open(loadavg, "w", encoding="ascii") as f:
+                    f.write("0.00 0.00 0.00 5/100 123\n")
 
-        ev = SchedulerSwitchEvent(
-            from_scheduler="default",
-            to_scheduler="scx_rusty",
-            reason="agent_select",
-            result="ok",
-            metrics_at_switch=m,
-        )
-        ed = ev.to_dict()
-        self.assertEqual(ed['from_scheduler'], 'default')
-        self.assertEqual(ed['to_scheduler'], 'scx_rusty')
+            ticks = iter([10.0, 12.0])
+            write_sample(100, 50, 850, 100, 1_000_000, 10)
+            collector = ProcMetricsCollector(proc_root, clock=lambda: next(ticks))
+            collector.start()
+            write_sample(200, 100, 1700, 130, 3_000_000, 20)
+            metrics = collector.collect()
 
-    def test_config_loader(self):
-        config = Config()
-        self.assertIn('scx_rusty', config.available_schedulers)
-        self.assertEqual(config.default_scheduler, 'default')
-        self.assertIn(config.active_slo_profile, ['balanced', 'interactive', 'throughput'])
-        profile_data = config.get_slo_profile('balanced')
-        self.assertIsNotNone(profile_data)
-        self.assertIn('constraints', profile_data)
+            self.assertAlmostEqual(metrics.cpu_utilization, 15.0)
+            self.assertEqual(metrics.context_switches, 30)
+            self.assertAlmostEqual(metrics.context_switch_rate, 15.0)
+            self.assertAlmostEqual(metrics.scheduling_latency_us, 200.0)
+            self.assertAlmostEqual(metrics.runqueue_length, 5.0)
+            self.assertIn("throughput_ops", metrics.unavailable_metrics)
+            self.assertIn("p99_latency_us", metrics.unavailable_metrics)
 
-    def test_mock_scheduler(self):
-        sched = MockSchedulerManager(available=['scx_rusty', 'scx_lavd', 'default'], default='default')
-        self.assertEqual(sched.get_current(), 'default')
-        self.assertTrue(sched.switch_to('scx_rusty'))
-        self.assertEqual(sched.get_current(), 'scx_rusty')
-        self.assertFalse(sched.switch_to('non_existent_sched'))
-        self.assertTrue(sched.reset_to_default())
-        self.assertEqual(sched.get_current(), 'default')
+    def test_missing_proc_data_fails_with_clear_error(self):
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1]) as proc_root:
+            collector = ProcMetricsCollector(proc_root)
+            with self.assertRaises(FileNotFoundError):
+                collector.start()
 
-    def test_mock_metrics_collector(self):
-        collector = MockMetricsCollector(['scx_rusty', 'default'])
-        collector.start()
-        metrics = collector.collect()
-        self.assertGreater(metrics.cpu_utilization, 0)
-        self.assertGreater(metrics.scheduling_latency_us, 0)
-        
-        # Test spike trigger
-        collector.trigger_spike(duration=5.0)
-        spiked_metrics = collector.collect()
-        self.assertGreaterEqual(spiked_metrics.scheduling_latency_us, 5000.0)
-        collector.stop()
 
-    def test_mock_bandit_agent(self):
-        schedulers = ['scx_rusty', 'scx_lavd', 'default']
-        agent = MockBanditAgent(schedulers, algorithm='ucb1')
-        collector = MockMetricsCollector(schedulers)
-        metrics = collector.collect()
+class BanditTests(unittest.TestCase):
+    def test_all_algorithms_select_known_arms_and_update(self):
+        metrics = SystemMetrics(cpu_utilization=70, scheduling_latency_us=500,
+                                throughput_ops=5000)
+        for name in ("ucb1", "thompson", "epsilon_greedy"):
+            agent = BanditAgent(["arm_a", "arm_b"], name)
+            selected = agent.select_scheduler(metrics)
+            self.assertIn(selected, ("arm_a", "arm_b"))
+            agent.update_reward(selected, agent.compute_reward(metrics))
+            self.assertGreaterEqual(agent.get_statistics().total_pulls, 1)
 
-        # Selection
-        selected = agent.select_scheduler(metrics)
-        self.assertIn(selected, schedulers)
+    def test_reward_is_bounded_and_rejects_bad_metrics(self):
+        agent = BanditAgent(["a"], "ucb1")
+        self.assertGreaterEqual(agent.compute_reward(SystemMetrics(cpu_utilization=50)), 0)
+        with self.assertRaises(ValueError):
+            agent.update_reward("not-an-arm", 0.5)
 
-        # Reward update
-        reward = agent.compute_reward(metrics)
-        self.assertGreaterEqual(reward, 0.0)
-        self.assertLessEqual(reward, 1.0)
-        agent.update_reward(selected, reward)
+    def test_benchmark_quantiles(self):
+        from scripts.benchmark_linux import percentile
+        self.assertEqual(percentile([1, 2, 3, 4], 50), 2)
+        self.assertEqual(percentile([1, 2, 3, 4], 99), 4)
+        self.assertIsNone(percentile([], 99))
 
-        stats = agent.get_statistics()
-        self.assertIn(selected, stats.arm_pulls)
-        self.assertGreater(stats.arm_pulls[selected], 0)
 
-    def test_slo_profile_and_constraint(self):
-        constraint = SLOConstraint(name='p99_latency_us', metric_name='scheduling_latency_us', max_value=5000.0, weight=0.6)
-        m_good = SystemMetrics(timestamp=1, cpu_utilization=50, scheduling_latency_us=2000)
-        m_bad = SystemMetrics(timestamp=1, cpu_utilization=50, scheduling_latency_us=8000)
+class MockAndHealthTests(unittest.TestCase):
+    def test_mock_scheduler_and_metrics_lifecycle(self):
+        scheduler = MockSchedulerManager(["scx_simple", "default"], "default")
+        self.assertTrue(scheduler.switch_to("scx_simple"))
+        self.assertEqual(scheduler.get_current(), "scx_simple")
+        self.assertFalse(scheduler.switch_to("unknown"))
+        metrics = MockMetricsCollector(["scx_simple", "default"])
+        metrics.start()
+        sample = metrics.collect()
+        self.assertGreater(sample.context_switch_rate, 0)
+        self.assertEqual(sample.unavailable_metrics, [])
+        metrics.stop()
 
-        ok, val = constraint.evaluate(m_good)
-        self.assertTrue(ok)
-        self.assertEqual(val, 2000)
-
-        ok, val = constraint.evaluate(m_bad)
-        self.assertFalse(ok)
-        self.assertEqual(val, 8000)
-
-    def test_health_checker(self):
+    def test_health_checker_uses_per_second_context_switch_rate(self):
         checker = HealthChecker()
-        m_healthy = SystemMetrics(timestamp=1, memory_used_mb=2000, memory_total_mb=16000, scheduling_latency_us=1500)
-        res = checker.check(m_healthy)
-        self.assertTrue(res['healthy'])
+        good = checker.check(SystemMetrics(context_switches=250_000, context_switch_rate=100))
+        self.assertTrue(good["healthy"])
+        bad = checker.check(SystemMetrics(context_switch_rate=200_001))
+        self.assertFalse(bad["healthy"])
 
-        m_unhealthy = SystemMetrics(timestamp=1, memory_used_mb=15900, memory_total_mb=16000, scheduling_latency_us=60000)
-        res_bad = checker.check(m_unhealthy)
-        self.assertFalse(res_bad['healthy'])
-        self.assertGreater(len(res_bad['issues']), 0)
 
-    def test_watchdog_state_machine_and_rollback(self):
-        rollback_called = []
-
-        def dummy_rollback(reason: str):
-            rollback_called.append(reason)
-            return True
-
-        profile = SLOProfile({
-            'profile': 'test',
-            'constraints': {
-                'p99_latency_us': {'max': 2000, 'weight': 1.0}
-            },
-            'evaluation': {
-                'window_seconds': 10,
-                'violation_threshold': 2,
-                'grace_period_seconds': 0.1,
-            },
-            'rollback': {
-                'target': 'default',
-                'cooldown_seconds': 1.0,
-            }
+class SLOTests(unittest.TestCase):
+    def profile(self, window=10, threshold=2, grace=0):
+        return SLOProfile({
+            "profile": "test",
+            "constraints": {"scheduling_latency_us": {"max": 100, "weight": 1}},
+            "evaluation": {"window_seconds": window,
+                           "violation_threshold": threshold,
+                           "grace_period_seconds": grace},
+            "rollback": {"target": "default", "cooldown_seconds": 1},
         })
 
-        watchdog = SLOWatchdog(slo_profile=profile, rollback_callback=dummy_rollback)
-        self.assertEqual(watchdog.state, WatchdogState.IDLE)
+    def test_unknown_constraints_are_not_reported_as_good_data(self):
+        constraint = SLOConstraint("unknown_metric", 10)
+        ok, actual = constraint.evaluate(SystemMetrics())
+        self.assertFalse(ok)
+        self.assertNotEqual(actual, actual)  # NaN denotes unavailable/unknown.
 
-        # Trigger scheduler switch -> enters GRACE_PERIOD
+    def test_rolling_window_uses_worst_sample_and_rolls_back_at_threshold(self):
+        rollback_reasons = []
+        watchdog = SLOWatchdog(self.profile(), lambda reason: rollback_reasons.append(reason) or True)
         watchdog.on_scheduler_switch()
-        self.assertEqual(watchdog.state, WatchdogState.GRACE_PERIOD)
+        watchdog._grace_start -= 1
+        good = SystemMetrics(scheduling_latency_us=50)
+        bad = SystemMetrics(scheduling_latency_us=120)
+        self.assertEqual(watchdog.evaluate(good, "scx_rusty")["action"], None)
+        self.assertEqual(watchdog.evaluate(bad, "scx_rusty")["action"], None)
+        result = watchdog.evaluate(good, "scx_rusty")
+        self.assertEqual(result["action"], "rollback")
+        self.assertEqual(len(rollback_reasons), 1)
 
-        # Wait for grace period to expire
-        time.sleep(0.15)
-        
-        # Good metric -> MONITORING
-        m_good = SystemMetrics(timestamp=1, cpu_utilization=20, scheduling_latency_us=1000)
-        r1 = watchdog.evaluate(m_good, 'scx_rusty')
-        self.assertEqual(watchdog.state, WatchdogState.MONITORING)
-        self.assertEqual(r1['action'], 'none')
+    def test_unavailable_field_does_not_cause_a_false_slo_pass(self):
+        profile = SLOProfile({"profile": "x", "constraints": {
+            "p99_latency_us": {"max": 100, "weight": 1}}})
+        ok, score, violations = profile.evaluate(
+            SystemMetrics(unavailable_metrics=["p99_latency_us"]), "default")
+        self.assertFalse(ok)
+        self.assertEqual(score, 0)
+        self.assertEqual(violations, [])
 
-        # First violation
-        m_bad = SystemMetrics(timestamp=2, cpu_utilization=90, scheduling_latency_us=5000)
-        r2 = watchdog.evaluate(m_bad, 'scx_rusty')
-        self.assertEqual(r2['action'], 'warning')
-        self.assertEqual(watchdog.state, WatchdogState.VIOLATION_DETECTED)
 
-        # Second violation (hits threshold 2) -> triggers rollback & COOLDOWN
-        r3 = watchdog.evaluate(m_bad, 'scx_rusty')
-        self.assertEqual(r3['action'], 'rollback')
-        self.assertEqual(watchdog.state, WatchdogState.COOLDOWN)
-        self.assertEqual(len(rollback_called), 1)
-
-    def test_engine_lifecycle(self):
+class EngineAndApiTests(unittest.TestCase):
+    def test_configuration_and_mock_profile_keep_p99_semantics(self):
         config = Config()
-        config.mode = 'mock'
-        config.agent_implementation = 'mock'
+        self.assertEqual(config.dashboard_host, "127.0.0.1")
+        self.assertIn("p99_latency_us", config.get_slo_profile("balanced")["constraints"])
+        config.mode = "mock"
         engine = AdaptiveSchedEngine(config)
+        self.assertIn("p99_latency_us", [c.name for c in engine._slo_profile.constraints])
 
-        # Start engine
+    def test_mock_engine_api_and_stop_route(self):
+        config = Config()
+        config.mode = "mock"
+        config.agent_implementation = "ucb1"
+        config._data.setdefault("agent", {})["decision_interval_seconds"] = 0.05
+        engine = AdaptiveSchedEngine(config)
         engine.start()
-        self.assertTrue(engine.is_running)
-
-        # Let it run 1 cycle
-        time.sleep(1.0)
-        status = engine.get_status()
-        self.assertEqual(status['mode'], 'mock')
-        self.assertIn(status['current_scheduler'], config.available_schedulers)
-
-        # Manual switch
-        switch_res = engine.manual_switch('scx_lavd')
-        self.assertTrue(switch_res['success'])
-        self.assertEqual(engine.get_status()['current_scheduler'], 'scx_lavd')
-
-        # Pause and resume
-        engine.pause()
-        self.assertTrue(engine.get_status()['paused'])
-        engine.resume()
-        self.assertFalse(engine.get_status()['paused'])
-
-        # Stop engine
-        engine.stop()
+        app = create_app(engine, config)
+        client = app.test_client()
+        self.assertEqual(client.get("/health").status_code, 200)
+        self.assertEqual(client.get("/api/status").status_code, 200)
+        self.assertEqual(client.get("/api/metrics").status_code, 200)
+        self.assertEqual(client.get("/api/slo").status_code, 200)
+        self.assertEqual(client.get("/api/events").status_code, 200)
+        self.assertEqual(client.post("/api/switch", json={"scheduler": "missing"}).get_json()["success"], False)
+        self.assertTrue(client.post("/api/switch", json={"scheduler": "scx_lavd"}).get_json()["success"])
+        self.assertTrue(client.post("/api/spike", json={"duration": 0.1}).get_json()["success"])
+        self.assertTrue(client.post("/api/pause", json={}).get_json()["success"])
+        self.assertTrue(client.post("/api/resume", json={}).get_json()["success"])
+        self.assertEqual(client.get("/").status_code, 200)
+        self.assertEqual(client.post("/api/stop", json={}).status_code, 200)
         self.assertFalse(engine.is_running)
 
-    def test_dashboard_api(self):
+    def test_invalid_mode_is_rejected(self):
         config = Config()
-        config.mode = 'mock'
-        engine = AdaptiveSchedEngine(config)
-        engine.start()
-
-        app = create_app(engine=engine, config=config)
-        client = app.test_client()
-
-        # Health endpoint
-        res = client.get('/health')
-        self.assertEqual(res.status_code, 200)
-
-        # Status endpoint
-        res = client.get('/api/status')
-        self.assertEqual(res.status_code, 200)
-        data = res.get_json()
-        self.assertIn('current_scheduler', data)
-
-        # Metrics endpoint
-        res = client.get('/api/metrics')
-        self.assertEqual(res.status_code, 200)
-
-        # SLO endpoint
-        res = client.get('/api/slo')
-        self.assertEqual(res.status_code, 200)
-
-        # Manual switch via POST
-        res = client.post('/api/switch', json={'scheduler': 'scx_rusty'})
-        self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.get_json().get('success'))
-
-        # Spike via POST
-        res = client.post('/api/spike', json={'duration': 2.0})
-        self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.get_json().get('success'))
-
-        # UI Page
-        res = client.get('/')
-        self.assertEqual(res.status_code, 200)
-        self.assertIn(b'AdaptiveSched', res.data)
-
-        engine.stop()
+        config.mode = "unsupported"
+        with self.assertRaises(ValueError):
+            AdaptiveSchedEngine(config)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

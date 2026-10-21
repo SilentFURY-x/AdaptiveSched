@@ -1,5 +1,7 @@
 # AdaptiveSched — Demo Tutorial Guide
 
+> This guide describes the **mock demo**. Sample readings and p99 values are simulated, and scheduler switches do not change the kernel. Current Linux MVP behavior and unsupported measurements are documented in [MVP_STATUS.md](MVP_STATUS.md).
+
 > **Purpose:** Step-by-step guide to running the AdaptiveSched demo for Review 2  
 > **Prerequisites:** Python 3.10+, pip  
 > **Time Required:** ~5 minutes to set up, then run the demo

@@ -8,6 +8,7 @@ the main decision loop and coordinates all module interactions.
 import time
 import threading
 import logging
+import copy
 from typing import Optional, List, Dict, Any
 
 from src.core.config import Config
@@ -20,8 +21,10 @@ from src.watchdog.watchdog import SLOWatchdog
 from src.watchdog.rollback import RollbackManager
 from src.watchdog.health_checker import HealthChecker
 from src.metrics.mock_metrics import MockMetricsCollector
+from src.metrics.proc_metrics import ProcMetricsCollector
 from src.agent.mock_agent import MockBanditAgent
 from src.scheduler.mock_scheduler import MockSchedulerManager
+from src.scheduler.linux_scheduler import LinuxSchedulerManager
 
 logger = logging.getLogger('adaptivesched.engine')
 
@@ -66,19 +69,23 @@ class AdaptiveSchedEngine:
         schedulers = self._config.available_schedulers
         default = self._config.default_scheduler
         
-        if self._config.mode != 'mock':
-            raise ValueError("This demo build supports mock mode only; real Linux integration is out of scope.")
-
-        self._scheduler_manager: ISchedulerManager = MockSchedulerManager(
-            available=schedulers, default=default,
-        )
-        
-        # Metrics Collector
-        self._metrics_collector: IMetricsCollector = MockMetricsCollector(schedulers)
+        if self._config.mode == 'mock':
+            self._scheduler_manager: ISchedulerManager = MockSchedulerManager(
+                available=schedulers, default=default,
+            )
+            self._metrics_collector: IMetricsCollector = MockMetricsCollector(schedulers)
+        elif self._config.mode == 'real':
+            self._scheduler_manager = LinuxSchedulerManager(schedulers, default)
+            schedulers = self._scheduler_manager.get_available()
+            if default not in schedulers:
+                raise ValueError(f"Configured default scheduler {default!r} must be available")
+            self._metrics_collector = ProcMetricsCollector()
+        else:
+            raise ValueError("mode must be 'mock' or 'real'")
         
         # Agent
         algorithm = self._config.agent_implementation
-        if algorithm == 'mock':
+        if algorithm == 'mock' and self._config.mode == 'mock':
             self._agent: ISchedulerAgent = MockBanditAgent(schedulers, algorithm)
         else:
             from src.agent.agent_engine import BanditAgent
@@ -90,7 +97,14 @@ class AdaptiveSchedEngine:
         )
         
         # SLO Profile
-        profile_data = self._config.get_slo_profile()
+        profile_data = copy.deepcopy(self._config.get_slo_profile())
+        if self._config.mode == 'real' and profile_data:
+            # Profiles use p99 limits for the mock demo. Procfs only provides
+            # average run-queue wait, so map the configured limit to that field.
+            constraints = profile_data.get('constraints', {})
+            p99_limit = constraints.pop('p99_latency_us', None)
+            if p99_limit is not None and 'scheduling_latency_us' not in constraints:
+                constraints['scheduling_latency_us'] = p99_limit
         if profile_data:
             self._slo_profile = SLOProfile(profile_data)
         else:
@@ -182,6 +196,8 @@ class AdaptiveSchedEngine:
         self._metrics_collector.stop()
         if self._thread:
             self._thread.join(timeout=10)
+        if isinstance(self._scheduler_manager, LinuxSchedulerManager):
+            self._scheduler_manager.stop()
         logger.info("[AdaptiveSched] Engine stopped")
 
     def _run_loop(self) -> None:
@@ -213,9 +229,12 @@ class AdaptiveSchedEngine:
         current_scheduler = self._scheduler_manager.get_current()
         
         logger.info(f"── Cycle {self._cycle_count} ──")
+        latency_value = ("unavailable" if "scheduling_latency_us" in metrics.unavailable_metrics
+                         else f"{metrics.scheduling_latency_us:.0f}μs average wait")
+        throughput_value = ("unavailable" if "throughput_ops" in metrics.unavailable_metrics
+                            else f"{metrics.throughput_ops:.0f} ops/s")
         logger.info(f"  Metrics: cpu={metrics.cpu_utilization:.1f}%, "
-                    f"latency={metrics.scheduling_latency_us:.0f}μs, "
-                    f"throughput={metrics.throughput_ops:.0f} ops")
+                    f"runqueue_wait={latency_value}, throughput={throughput_value}")
         
         # 2. Update reward for current scheduler
         if hasattr(self._agent, 'compute_reward'):
@@ -313,7 +332,7 @@ class AdaptiveSchedEngine:
             else:
                 return {'success': False, 'message': f'Failed to switch to {scheduler_name}'}
 
-    def trigger_spike(self, duration: float = 20.0) -> None:
+    def trigger_spike(self, duration: float = 20.0) -> bool:
         """Trigger a simulated performance spike (mock mode only).
         
         Args:
@@ -322,6 +341,8 @@ class AdaptiveSchedEngine:
         if isinstance(self._metrics_collector, MockMetricsCollector):
             self._metrics_collector.trigger_spike(duration)
             logger.info(f"[Demo] Triggered performance spike ({duration}s)")
+            return True
+        return False
 
     def pause(self) -> None:
         """Pause the agent (stop making decisions)."""
@@ -421,6 +442,8 @@ class AdaptiveSchedEngine:
         constraints_status = []
         if self._current_metrics:
             for constraint in self._slo_profile.constraints:
+                if constraint.name in self._current_metrics.unavailable_metrics:
+                    continue
                 satisfied, actual = constraint.evaluate(self._current_metrics)
                 constraints_status.append({
                     'name': constraint.name,

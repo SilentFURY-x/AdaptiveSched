@@ -83,7 +83,8 @@ def trigger_spike():
         return jsonify({'error': 'Engine not initialized'}), 503
     data = request.get_json() or {}
     duration = data.get('duration', 30.0)
-    _engine.trigger_spike(duration)
+    if not _engine.trigger_spike(duration):
+        return jsonify({'success': False, 'message': 'Spike injection is available in mock mode only'}), 400
     return jsonify({'success': True, 'message': f'Spike triggered ({duration}s)'})
 
 
@@ -105,6 +106,15 @@ def pause_agent():
         return jsonify({'error': 'Engine not initialized'}), 503
     _engine.pause()
     return jsonify({'success': True, 'message': 'Agent paused'})
+
+
+@api.route('/api/stop', methods=['POST'])
+def stop_engine():
+    """Stop the decision engine and release an owned Linux scheduler."""
+    if not _engine:
+        return jsonify({'error': 'Engine not initialized'}), 503
+    _engine.stop()
+    return jsonify({'success': True, 'message': 'Engine stopped'})
 
 
 @api.route('/api/resume', methods=['POST'])
