@@ -11,6 +11,7 @@ State Machine:
 
 import time
 import logging
+from dataclasses import replace
 from typing import Optional, Callable
 from src.core.models import SystemMetrics, SLOViolation, WatchdogState
 from src.watchdog.slo_config import SLOProfile
@@ -63,6 +64,7 @@ class SLOWatchdog:
         # Compliance tracking
         self._compliance_score: float = 100.0
         self._compliance_history: list = []
+        self._window_samples: list = []
         
         # Event log
         self._events: list = []
@@ -86,6 +88,8 @@ class SLOWatchdog:
     def slo_profile(self, profile: SLOProfile) -> None:
         """Set a new SLO profile."""
         self._profile = profile
+        self._window_samples.clear()
+        self._consecutive_violations = 0
         self._log_event("profile_changed", f"SLO profile changed to '{profile.name}'")
 
     def on_scheduler_switch(self) -> None:
@@ -99,8 +103,9 @@ class SLOWatchdog:
             return
         
         self._state = self.STATE_GRACE_PERIOD
-        self._grace_start = time.time()
+        self._grace_start = time.monotonic()
         self._consecutive_violations = 0
+        self._window_samples.clear()
         self._log_event("grace_period_started", 
                        f"Grace period started ({self._profile.grace_period_seconds}s)")
         logger.info(f"[Watchdog] Grace period started "
@@ -123,7 +128,7 @@ class SLOWatchdog:
                 - violations: List of current violations
                 - action: None | "rollback"
         """
-        now = time.time()
+        now = time.monotonic()
         result = {
             'state': self._state,
             'compliance': self._compliance_score,
@@ -169,14 +174,18 @@ class SLOWatchdog:
 
         # Handle MONITORING / VIOLATION_DETECTED states
         if self._state in (self.STATE_MONITORING, self.STATE_VIOLATION_DETECTED):
-            satisfied, compliance, violations = self._profile.evaluate(
-                metrics, current_scheduler
-            )
+            # Evaluate the worst observed value per constrained metric in the
+            # rolling window. A good sample cannot hide a recent latency/load spike.
+            self._window_samples.append((now, metrics))
+            cutoff = now - self._profile.window_seconds
+            self._window_samples = [(ts, sample) for ts, sample in self._window_samples if ts >= cutoff]
+            window_metrics = self._window_max(self._window_samples)
+            satisfied, compliance, violations = self._profile.evaluate(window_metrics, current_scheduler)
             self._compliance_score = compliance
             
             # Track compliance history (keep last 60 entries)
             self._compliance_history.append({
-                'timestamp': now,
+                'timestamp': time.time(),
                 'score': compliance,
             })
             if len(self._compliance_history) > 60:
@@ -215,6 +224,22 @@ class SLOWatchdog:
 
         return result
 
+    @staticmethod
+    def _window_max(samples):
+        if not samples:
+            return SystemMetrics()
+        metrics = [sample for _, sample in samples]
+        merged = replace(metrics[-1])
+        fields = ("p99_latency_us", "scheduling_latency_us", "context_switch_rate",
+                  "context_switches", "cpu_utilization", "cache_miss_rate", "runqueue_length")
+        for name in fields:
+            values = [getattr(m, name) for m in metrics if name not in m.unavailable_metrics]
+            if values:
+                setattr(merged, name, max(values))
+        unavailable = set.intersection(*(set(m.unavailable_metrics) for m in metrics))
+        merged.unavailable_metrics = sorted(unavailable)
+        return merged
+
     def _trigger_rollback(self, violations: list) -> None:
         """Execute automatic rollback to safe scheduler.
         
@@ -231,7 +256,11 @@ class SLOWatchdog:
         
         # Call the rollback callback
         if self._rollback_callback:
-            success = self._rollback_callback(reason)
+            try:
+                success = self._rollback_callback(reason)
+            except Exception:
+                logger.exception("Rollback callback failed")
+                success = False
             if success:
                 self._log_event("rollback_completed", "Rollback successful")
             else:
@@ -239,7 +268,7 @@ class SLOWatchdog:
         
         # Enter cooldown
         self._state = self.STATE_COOLDOWN
-        self._cooldown_start = time.time()
+        self._cooldown_start = time.monotonic()
         self._consecutive_violations = 0
         
         logger.info(f"[Watchdog] Entering cooldown ({self._profile.cooldown_seconds}s)")
@@ -258,7 +287,7 @@ class SLOWatchdog:
             return False
 
         if self._state == self.STATE_COOLDOWN:
-            elapsed = time.time() - self._cooldown_start
+            elapsed = time.monotonic() - self._cooldown_start
             if elapsed < self._profile.cooldown_seconds:
                 return False
         return True
@@ -269,7 +298,7 @@ class SLOWatchdog:
         Returns:
             WatchdogState with all current values.
         """
-        now = time.time()
+        now = time.monotonic()
         
         grace_remaining = 0.0
         if self._state == self.STATE_GRACE_PERIOD:

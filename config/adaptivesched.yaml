@@ -23,7 +23,7 @@ slo:
   profiles_dir: "config/slo_profiles"
 
 dashboard:
-  host: "0.0.0.0"
+  host: "127.0.0.1"
   port: 8080
   update_interval_ms: 1000
 

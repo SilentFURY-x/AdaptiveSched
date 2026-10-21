@@ -169,16 +169,22 @@ def cmd_status(args: argparse.Namespace) -> None:
 
         # Current Metrics Table
         metrics = status.get('current_metrics') or {}
-        table_met = Table(title="Live Hardware & Workload Metrics", title_style="bold magenta", border_style="magenta")
+        unavailable = metrics.get('unavailable_metrics', [])
+        real_mode = status.get('mode') == 'real'
+        latency_name = 'scheduling_latency_us' if real_mode else 'p99_latency_us'
+        latency_label = 'Average Run-Queue Wait' if real_mode else 'P99 Workload Latency'
+        latency_value = 'Unavailable' if latency_name in unavailable else f"{metrics.get(latency_name, 0):.0f} μs"
+        throughput_value = 'Unavailable' if 'throughput_ops' in unavailable else f"{metrics.get('throughput_ops', 0):.0f} ops/s"
+        table_met = Table(title="Live System Metrics", title_style="bold magenta", border_style="magenta")
         table_met.add_column("Metric", style="bold")
         table_met.add_column("Current Reading", style="cyan")
         table_met.add_column("Target / Notes", style="dim")
 
-        table_met.add_row("CPU Utilization", f"{metrics.get('cpu_utilization', 0.0):.1f} %", "Total across all cores")
-        table_met.add_row("Scheduling Latency", f"{metrics.get('scheduling_latency_us', 0):.0f} μs", "P99 kernel queue wait")
-        table_met.add_row("Throughput", f"{metrics.get('throughput_ops', 0):.0f} ops/s", "Completed execution ops")
-        table_met.add_row("Context Switches", f"{metrics.get('context_switches_per_sec', 0):.0f} /s", "Thread switch frequency")
-        table_met.add_row("Queued Tasks", str(metrics.get('running_tasks', 0)), "Active run-queue depth")
+        table_met.add_row("CPU Utilization", f"{metrics.get('cpu_utilization', 0.0):.1f} %", "Host CPU utilization")
+        table_met.add_row(latency_label, latency_value, "Average wait from procfs" if real_mode else "Simulated workload tail latency")
+        table_met.add_row("Throughput", throughput_value, "Workload probe" if real_mode else "Simulated completed operations")
+        table_met.add_row("Context Switch Rate", f"{metrics.get('context_switch_rate', 0):.0f} /s", "System-wide")
+        table_met.add_row("Runnable Tasks", str(metrics.get('runqueue_length', 0)), "Instantaneous procfs count")
         console.print(table_met)
 
         # SLO & Watchdog Table
@@ -208,11 +214,18 @@ def cmd_status(args: argparse.Namespace) -> None:
         print(f" SLO Compliance     : {status.get('compliance', 100):.1f}%")
         print(f" Decision Cycles    : {status.get('cycle_count', 0)}")
         m = status.get('current_metrics') or {}
+        unavailable = m.get('unavailable_metrics', [])
+        real_mode = status.get('mode') == 'real'
+        latency_name = 'scheduling_latency_us' if real_mode else 'p99_latency_us'
+        latency_label = 'Average Run-Queue Wait' if real_mode else 'P99 Workload Latency'
+        latency_value = 'Unavailable' if latency_name in unavailable else f"{m.get(latency_name, 0):.0f} μs"
+        throughput_value = 'Unavailable' if 'throughput_ops' in unavailable else f"{m.get('throughput_ops', 0):.0f} ops/s"
         print("-" * 50)
         print(" Live Metrics:")
         print(f"   CPU Utilization  : {m.get('cpu_utilization', 0):.1f}%")
-        print(f"   P99 Latency      : {m.get('scheduling_latency_us', 0):.0f} μs")
-        print(f"   Throughput       : {m.get('throughput_ops', 0):.0f} ops/s")
+        print(f"   {latency_label:<21}: {latency_value}")
+        print(f"   Throughput       : {throughput_value}")
+        print(f"   Context Switches : {m.get('context_switch_rate', 0):.0f}/s")
         print("=" * 50 + "\n")
 
 
@@ -371,10 +384,9 @@ def main():
     }
 
     if args.command == 'stop':
-        # Send pause or stop signal
-        resp = _api_post('/api/pause', {}, f"http://{args.host}:{args.port}")
+        resp = _api_post('/api/stop', {}, f"http://{args.host}:{args.port}")
         if resp and resp.get('success'):
-            print("[AdaptiveSched] Sent pause/stop signal to engine.")
+            print("[AdaptiveSched] Engine stopped.")
         else:
             print("[AdaptiveSched] Unable to stop engine; check if running.")
         return

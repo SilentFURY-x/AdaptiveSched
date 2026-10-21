@@ -4,7 +4,7 @@ Defines shared data structures used across all modules.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import time
 
 
@@ -17,12 +17,14 @@ class SystemMetrics:
     timestamp: float = field(default_factory=time.time)
     cpu_utilization: float = 0.0          # Percentage (0-100)
     context_switches: int = 0              # Count per collection interval
+    context_switch_rate: float = 0.0        # Context switches per second
     scheduling_latency_us: float = 0.0     # Microseconds
     ipc: float = 0.0                       # Instructions per cycle
     cache_miss_rate: float = 0.0           # Ratio (0-1)
-    runqueue_length: float = 0.0           # Average runqueue depth
+    runqueue_length: float = 0.0           # Instantaneous runnable-task count
     throughput_ops: float = 0.0            # Operations per second
     p99_latency_us: float = 0.0            # 99th percentile latency (μs)
+    unavailable_metrics: List[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
@@ -30,12 +32,14 @@ class SystemMetrics:
             'timestamp': self.timestamp,
             'cpu_utilization': round(self.cpu_utilization, 2),
             'context_switches': self.context_switches,
+            'context_switch_rate': round(self.context_switch_rate, 2),
             'scheduling_latency_us': round(self.scheduling_latency_us, 2),
             'ipc': round(self.ipc, 3),
             'cache_miss_rate': round(self.cache_miss_rate, 4),
             'runqueue_length': round(self.runqueue_length, 2),
             'throughput_ops': round(self.throughput_ops, 2),
             'p99_latency_us': round(self.p99_latency_us, 2),
+            'unavailable_metrics': list(self.unavailable_metrics),
         }
 
 

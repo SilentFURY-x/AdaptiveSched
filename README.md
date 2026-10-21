@@ -2,7 +2,7 @@
 
 [![Operating System](https://img.shields.io/badge/Kernel-Linux%206.12%2B%20(sched__ext)-blue.svg)](https://github.com/sched-ext/scx)
 [![Architecture](https://img.shields.io/badge/Architecture-Modular%20C%2FPython-emerald.svg)]()
-[![Review Status](https://img.shields.io/badge/Project%20Review-2%20(Complete%20Demo)-brightgreen.svg)]()
+[![Review Status](https://img.shields.io/badge/Status-Mock%20Demo%20%2B%20Linux%20MVP-blue.svg)]()
 
 > **Operating Systems Engineering Project — Review 2**  
 > School of Computer Science and Engineering (SCOPE), VIT Vellore  
@@ -16,7 +16,8 @@
 
 - [Demo Guide](docs/DEMO_GUIDE.md): Detailed test cases, expected terminal outputs, and spike demonstration.
 - [Product Requirements Document (PRD)](docs/PRD.md): Full functional requirements, mathematical equations, and integration plan.
-- [Aritra's Development Plan](docs/ARITRA_PLAN.md): Actionable instructions for Module A development.
+- [Current MVP Status](docs/MVP_STATUS.md): Implemented behavior, limitations, and Linux validation checklist.
+- [Earlier Module A Plan](docs/ARITRA_PLAN.md): Historical plan; use the MVP status page for current implementation state.
 
 ---
 
@@ -26,10 +27,10 @@ Modern operating systems rely on a single, fixed-policy CPU scheduler (e.g., CFS
 
 The Linux kernel 6.12 introduced **`sched_ext`**, enabling dynamic, user-space schedulers via eBPF. However, Linux lacks an **autonomous mechanism to choose which scheduler to run**. Existing academic approaches rely on offline hardware calibration tables that cannot generalize to dynamic workloads.
 
-**AdaptiveSched** solves this by formulating dynamic scheduling as an **online multi-armed bandit problem** backed by an **SLO-Aware Safety Watchdog**:
+**AdaptiveSched** is an MVP for exploring scheduler selection with an **online multi-armed bandit** and an **SLO watchdog**. The mock demo is portable; Linux real mode is an early integration path and has not yet been validated on a supported host:
 1. **Online Bandit Agent**: Learns optimal schedulers (`scx_rusty`, `scx_lavd`, `scx_bpfland`, `scx_simple`) on-the-fly using UCB1, Thompson Sampling, or ε-Greedy.
-2. **SLO Watchdog & Rollback Engine**: Continually evaluates latency and CPU load against Service Level Objectives (SLOs). If performance drops or instability occurs, it triggers an **automatic zero-downtime rollback** to the safe default kernel scheduler.
-3. **Interactive Visual Dashboard**: A real-time web application streaming scheduling latencies, bandit arm values, throughput, and state transitions.
+2. **SLO Watchdog & Rollback Engine**: Evaluates available metrics over a rolling window. In Linux mode, stopping a manager-owned sched_ext process returns scheduling to the kernel fair scheduler; switching can include a short fair-scheduler interval.
+3. **Interactive Dashboard**: Shows metrics and identifies simulated or unavailable values. Workload throughput and p99 latency require workload-specific collection and are not provided by the procfs MVP.
 
 ---
 
@@ -56,8 +57,8 @@ graph TD
     subgraph Execution ["Kernel & Mock Layer"]
         MockSched["MockSchedulerManager"]
         MockMetrics["MockMetricsCollector"]
-        RealSched["scx_loader (sched_ext BPF)"]
-        RealMetrics["C Metrics Collector (/proc + perf_events)"]
+        RealSched["LinuxSchedulerManager (scx_* processes)"]
+        RealMetrics["Python procfs collector"]
     end
 
     CLI --> Engine
@@ -85,9 +86,9 @@ To ensure parallel development and modular isolation, the project is structured 
 | Workstream | Owner | Subsystems / Deliverables | Status |
 | :--- | :--- | :--- | :--- |
 | **Module B: Watchdog, Engine & Interfaces** | **Arjun Tyagi** (24BCE0605) | • Core Engine orchestrator & decision loop<br>• SLO Watchdog state machine & rollback manager<br>• Interactive Web Dashboard (Chart.js, dark glassmorphism)<br>• Rich Terminal CLI & command runner<br>• System integration & demo harnesses | **Completed & Demo-Ready** |
-| **Module A: Learning & Kernel Collection** | **Aritra Ghosh** (24BCE0598) | • Multi-armed bandit algorithms (UCB1, Thompson, ε-greedy)<br>• Dynamic reward normalization functions<br>• C-based metrics collector (`/proc/schedstat` & `perf`)<br>• Python ctypes bridge & eBPF scheduler loader | **Planned in [docs/ARITRA_PLAN.md](docs/ARITRA_PLAN.md)** |
+| **Module A: Learning & Kernel Collection** | **Aritra Ghosh** (24BCE0598) | • Python bandit algorithms and reward computation<br>• Mock and Python procfs metrics<br>• Linux process-based sched_ext manager<br>• C/perf collector, ctypes bridge, and Linux host validation | **Algorithms and Linux MVP implemented; host validation and C/perf work remain** |
 
-*(Mock implementations are currently provided for Module A components, enabling the entire project to run end-to-end on any Windows/Linux machine for Review 2).*
+*(The default demo uses simulation and does not change the host scheduler. Real mode is Linux-only and requires root plus supported sched_ext binaries.)*
 
 ---
 
@@ -127,15 +128,23 @@ Double-click `start_demo.bat` in the project root. This installs requirements, s
    python -m src.cli.main history
    ```
 
+4. **Linux real-mode MVP** (Linux kernel with `CONFIG_SCHED_CLASS_EXT`, installed `scx_*` binaries, and root privileges):
+   ```bash
+   sudo python -m src.cli.main start --mode real --algorithm ucb1 --slo balanced
+   ```
+   See [MVP Status](docs/MVP_STATUS.md) for measurements, safety boundaries, and the required validation steps. Real mode reports average run-queue wait, not p99 workload latency; throughput is unavailable without a workload probe.
+
+5. **Repeatable Linux microbenchmark** (same Linux prerequisites):
+   ```bash
+   sudo python scripts/benchmark_linux.py --schedulers default scx_rusty scx_lavd --duration 30 --repeats 3 --output results/benchmark.json
+   ```
+   This compares one fixed CPU workload and records metadata, per-trial samples, and median changes against `default`. It is a microbenchmark; application workloads still need separate evaluation.
+
 ---
 
 ## 5. Review 2 Demo Script Walkthrough
 
-For a step-by-step presentation flow with dialogue and exact actions, refer to:
-- 💡 **[Simple Project Explanation (ELI5)](docs/SIMPLE_EXPLANATION.md)**: Plain-English explanation with analogies, zero jargon, and viva Q&A.
-- 📋 **[Demo Guide](docs/DEMO_GUIDE.md)**: Detailed test cases, expected terminal outputs, and spike demonstration.
-- 📐 **[Product Requirements Document (PRD)](docs/PRD.md)**: Full functional requirements, mathematical equations, and integration plan.
-- 🛠 **[Aritra's Development Plan](docs/ARITRA_PLAN.md)**: Actionable instructions for Module A development.
+For the mock demo walkthrough, see the [Demo Guide](docs/DEMO_GUIDE.md). For current implementation boundaries, see [MVP Status](docs/MVP_STATUS.md) and the [PRD](docs/PRD.md).
 
 ### Key Demo Highlights:
 1. **Autonomous Learning**: Observe bandit algorithm pulling scheduler arms and adjusting weights.
@@ -155,10 +164,10 @@ AdaptiveSched/
 │       ├── interactive.yaml
 │       └── throughput.yaml
 ├── docs/
-│   ├── PRD.md                   # Complete Product Requirements Document
-│   ├── DEMO_GUIDE.md            # Step-by-step demo instructions
-│   ├── PRESENTATION_SCRIPT.md   # Presentation script for Review 2
-│   └── ARITRA_PLAN.md           # Implementation plan for teammate (Module A)
+│   ├── PRD.md                   # Requirements and architecture
+│   ├── DEMO_GUIDE.md            # Mock demo instructions
+│   ├── MVP_STATUS.md            # Current implementation and limits
+│   └── ARITRA_PLAN.md           # Historical Module A plan
 ├── src/
 │   ├── agent/                   # Multi-armed bandit agents (mock & production)
 │   ├── cli/                     # Rich CLI commands (start, status, switch, slo, history)

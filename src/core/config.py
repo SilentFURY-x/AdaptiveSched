@@ -121,7 +121,7 @@ class Config:
     @property
     def dashboard_host(self) -> str:
         """Get the dashboard host."""
-        return self._data.get('dashboard', {}).get('host', '0.0.0.0')
+        return self._data.get('dashboard', {}).get('host', '127.0.0.1')
 
     @property
     def dashboard_port(self) -> int:

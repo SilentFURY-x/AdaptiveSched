@@ -55,8 +55,8 @@ class HealthChecker:
                 severity = "warning"
         
         # Check context switch rate
-        if metrics.context_switches >= self.CRITICAL_CTX_SWITCH_RATE:
-            issues.append(f"Context switch rate critical: {metrics.context_switches}")
+        if metrics.context_switch_rate >= self.CRITICAL_CTX_SWITCH_RATE:
+            issues.append(f"Context switch rate critical: {metrics.context_switch_rate:.0f}/s")
             severity = "critical"
         
         # Check runqueue length
