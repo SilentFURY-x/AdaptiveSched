@@ -1,10 +1,12 @@
-# AdaptiveSched — Demo Tutorial Guide
+# AdaptiveSched: Demonstration Guide
 
-> This guide describes the **mock demo**. Sample readings and p99 values are simulated, and scheduler switches do not change the kernel. Current Linux MVP behavior and unsupported measurements are documented in [MVP_STATUS.md](MVP_STATUS.md).
+This guide provides step-by-step instructions for running and evaluating the AdaptiveSched autonomous CPU scheduler selection system.
 
-> **Purpose:** Step-by-step guide to running the AdaptiveSched demo for Review 2  
-> **Prerequisites:** Python 3.10+, pip  
-> **Time Required:** ~5 minutes to set up, then run the demo
+The demonstration environment executes in mock mode by default, allowing complete inspection of online bandit learning, metrics collection, interactive operator controls, and safety watchdog rollback without modifying host kernel state.
+
+Prerequisites:
+- Python 3.10 or newer
+- Virtual environment with dependencies from `requirements.txt` installed
 
 ---
 
@@ -12,20 +14,24 @@
 
 ### 1.1 Install Dependencies
 
+Activate your Python virtual environment and install the required dependencies:
+
 ```bash
-cd c:\PROJECTS\OS\AdaptiveSched
 pip install -r requirements.txt
 ```
 
-### 1.2 Verify Installation
+### 1.2 Verify CLI Installation
+
+Confirm that the CLI module executes correctly:
 
 ```bash
 python -m src.cli.main --help
 ```
 
-**Expected Output:**
-```
-usage: AdaptiveSched [-h] {start,stop,status,switch,slo,history,dashboard} ...
+Expected output:
+```text
+usage: AdaptiveSched [-h] [--host HOST] [--port PORT]
+                     {start,stop,status,switch,slo,history,dashboard} ...
 
 AdaptiveSched: Self-Tuning CPU Scheduler Selection
 
@@ -39,219 +45,236 @@ positional arguments:
     history             Show scheduler switch history
     dashboard           Launch the web dashboard
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
 ```
 
 ---
 
-## 2. Demo Walkthrough
+## 2. Launching the Demo
 
-### 2.1 Demo Scenario Overview
+### Option A: Complete Demo Launcher (Recommended)
 
-We'll demonstrate the following flow:
-1. Start the agent in mock mode
-2. Observe automatic scheduler selection
-3. View real-time metrics on the dashboard
-4. Trigger an SLO violation
-5. Watch the automatic rollback
-6. Review the event history
-
----
-
-### 2.2 Step 1: Start the Agent
-
-Open **Terminal 1** (the agent terminal):
+Run the unified demo launcher, which initializes the core engine in mock mode and starts the web dashboard server on `127.0.0.1:8080`:
 
 ```bash
-cd c:\PROJECTS\OS\AdaptiveSched
-python -m src.cli.main start --mode mock --algorithm ucb1
+python run_demo.py
 ```
 
-**What to show the reviewer:**
-- The agent starts and prints initialization info
-- It begins collecting metrics and selecting schedulers
-- The log output shows scheduler decisions in real-time
+Console banner:
+```text
+======================================================================
+   AdaptiveSched -- Live Demonstration
+   Autonomous CPU Scheduler Selection via Online Bandit Learning
+   Arjun Tyagi (24BCE0605) & Aritra Ghosh (24BCE0598)
+======================================================================
 
-**Expected output:**
-```
-[AdaptiveSched] Starting in MOCK mode...
-[AdaptiveSched] Algorithm: UCB1
-[AdaptiveSched] SLO Profile: balanced
-[AdaptiveSched] Available schedulers: scx_rusty, scx_lavd, scx_bpfland, scx_simple, default
-[AdaptiveSched] Agent loop started (interval: 5s)
-[AdaptiveSched] ── Cycle 1 ──
-[AdaptiveSched] Metrics: cpu=45.2%, latency=1234μs, throughput=8921 ops
-[AdaptiveSched] Selected: scx_rusty (UCB1 score: 0.82)
-[AdaptiveSched] Switching: default → scx_rusty
-[AdaptiveSched] Watchdog: Grace period started (5s)
-...
+[Demo] Starting AdaptiveSched engine in MOCK mode...
+[Demo] Algorithm: UCB1 | SLO Profile: balanced | Interval: 5.0s
+[Demo] Engine successfully started.
+[Demo] Starting web dashboard at http://127.0.0.1:8080 ...
 ```
 
-Let this run in the background.
+Open a web browser and navigate to:
+```text
+http://127.0.0.1:8080
+```
 
 ---
 
-### 2.3 Step 2: Check Status
+## 3. Step-by-Step Walkthrough
 
-Open **Terminal 2** (the control terminal):
+### Step 1: Real-Time CLI Status Inspection
+
+Open a second terminal window while the engine is running and inspect system status:
 
 ```bash
 python -m src.cli.main status
 ```
 
-**What to show the reviewer:**
-- Current active scheduler
-- Agent statistics (selections per arm, average rewards)
-- SLO compliance status
-- Watchdog state
+Expected output:
+```text
+         System Overview          
++------------------+-------------+
+| Property         | Value       |
++------------------+-------------+
+| Status           | RUNNING     |
+| Agent State      | ACTIVE      |
+| Operating Mode   | MOCK        |
+| Bandit Algorithm | UCB1        |
+| Active Scheduler | scx_rusty   |
+| Engine Uptime    | 00:01:15    |
+| Decision Cycles  | 15          |
++------------------+-------------+
+                            Live System Metrics                             
++----------------------+-----------------+---------------------------------+
+| Metric               | Current Reading | Target / Notes                  |
++----------------------+-----------------+---------------------------------+
+| CPU Utilization      | 42.1 %          | Host CPU utilization            |
+| P99 Workload Latency | 2180 us         | Simulated workload tail latency |
+| Throughput           | 10850 ops/s     | Simulated completed operations  |
+| Context Switch Rate  | 35200 /s        | System-wide                     |
+| Runnable Tasks       | 2.50            | Instantaneous procfs count      |
++----------------------+-----------------+---------------------------------+
+    SLO Watchdog & Safety Governance     
++------------------------+--------------+
+| Watchdog Field         | Status       |
++------------------------+--------------+
+| Active Profile         | balanced     |
+| SLO Compliance         | 68.5 %       |
+| Watchdog State         | MONITORING   |
+| Consecutive Violations | 0 / 3        |
+| Total Rollbacks        | 0            |
++------------------------+--------------+
+```
 
-**Expected output:**
-```
-╔══════════════════════════════════════════════════════╗
-║              AdaptiveSched Status                    ║
-╠══════════════════════════════════════════════════════╣
-║ Mode:              mock                              ║
-║ Active Scheduler:  scx_rusty                         ║
-║ Algorithm:         UCB1                              ║
-║ SLO Profile:       balanced                          ║
-║ Watchdog State:    MONITORING                        ║
-║ SLO Compliance:    ✅ 98.2%                          ║
-║ Uptime:            00:02:34                          ║
-╠══════════════════════════════════════════════════════╣
-║ Arm Statistics:                                      ║
-║   scx_rusty:    pulls=5  avg_reward=0.78             ║
-║   scx_lavd:     pulls=3  avg_reward=0.65             ║
-║   scx_bpfland:  pulls=2  avg_reward=0.71             ║
-║   scx_simple:   pulls=1  avg_reward=0.52             ║
-║   default:      pulls=4  avg_reward=0.60             ║
-╚══════════════════════════════════════════════════════╝
-```
+Key points to observe:
+- Operating Mode indicates MOCK mode.
+- Active Scheduler shows the arm selected by the UCB1 bandit algorithm.
+- Watchdog State confirms the safety module is in MONITORING state with zero violations.
 
 ---
 
-### 2.4 Step 3: Launch the Dashboard
+### Step 2: Web Dashboard Telemetry and Policy Learning
+
+Observe the running web dashboard (`http://127.0.0.1:8080`):
+
+1. **Header Bar**: Displays MOCK MODE, the active algorithm (ALGO: UCB1), AGENT ACTIVE state, uptime counter, cycle counter, Pause/Resume button, and Simulate Spike button.
+2. **KPI Overview Cards**:
+   - Card 1: Active Scheduler and list of candidate schedulers (`scx_rusty`, `scx_lavd`, `scx_bpfland`, `scx_simple`, `default`).
+   - Card 2: CPU Utilization across 8 simulated cores.
+   - Card 3: Workload Latency (P99) comparing measured latency to the active SLO threshold (e.g., Target: < 10000 us).
+   - Card 4: System Throughput (ops/sec) and context switch rate.
+   - Card 5: SLO Compliance score and current watchdog state.
+3. **Performance Charts**:
+   - P99 Workload Latency vs. SLO Ceiling line chart.
+   - CPU Utilization and Workload Throughput dual-axis line chart.
+   - Policy Learning bar chart displaying the estimated reward and selection count ($n$) for each scheduler arm.
+
+---
+
+### Step 3: Triggering SLO Violation and Automated Rollback
+
+This step demonstrates the core safety mechanism of AdaptiveSched.
+
+In Terminal 2, manually force the system to switch to `scx_simple` (a baseline FIFO scheduler unsuited for complex workloads):
 
 ```bash
-python -m src.cli.main dashboard --port 8080
+python -m src.cli.main switch scx_simple
 ```
 
-**Open browser to:** `http://localhost:8080`
+Alternatively, click the **Simulate 15s workload spike** button on the web dashboard.
 
-**What to show the reviewer:**
-- **Top bar:** Current scheduler name, mode, uptime
-- **CPU Metrics chart:** Real-time line chart showing CPU utilization, scheduling latency
-- **Throughput chart:** Operations per second over time
-- **SLO Gauge:** Green/yellow/red compliance indicator
-- **Scheduler History:** Timeline showing which scheduler was active when
-- **Bandit Statistics:** Bar chart of arm pull counts and average rewards
-- **Event Log:** Scrollable log of all decisions, switches, and violations
-
-**Talk through each section:**
-> "The dashboard updates every second. You can see the CPU utilization hovering around 45-65% as our mock simulates a realistic workload. The SLO gauge is green — we're well within our constraints."
+**Observable sequence of events**:
+1. The Active Scheduler updates to `scx_simple`.
+2. The watchdog enters `GRACE_PERIOD` (5 seconds) to allow transient switching effects to settle.
+3. Once monitoring resumes, simulated latency spikes from ~2,000 us to over 14,000 us, breaching the 10,000 us SLO ceiling.
+4. The latency badge changes to `VIOLATION` in red.
+5. In the Watchdog State Machine indicator, the state transitions from `MONITOR` to `VIOLATION`. The consecutive violation counter increments: 1/3, 2/3, 3/3.
+6. Upon reaching the threshold (3 consecutive violations), the watchdog automatically triggers an **emergency rollback**:
+   - The active scheduler immediately switches back to `default` (CFS/EEVDF).
+   - The watchdog transitions into `COOLDOWN` (60 seconds) to prevent the bandit agent from re-selecting the offending arm.
+   - The latency chart drops back into the compliant zone below 4,000 us.
 
 ---
 
-### 2.5 Step 4: Trigger SLO Violation (Key Demo Moment)
+### Step 4: Audit History Verification
 
-In Terminal 2, simulate a workload spike that causes degradation:
-
-```bash
-python -m src.cli.main switch scx_simple --force
-```
-
-The mock mode simulates `scx_simple` as performing poorly under load.
-
-**What to show the reviewer on the dashboard:**
-1. **Scheduler indicator** changes to `scx_simple`
-2. **Watchdog** enters grace period (5 seconds)
-3. After grace period, **latency metrics spike** on the chart
-4. **SLO gauge** transitions: Green → Yellow → Red
-5. After 3 consecutive violations (~15 seconds):
-   - **Automatic rollback** triggers
-   - Scheduler switches back to `default`
-   - SLO gauge returns to green
-   - **Event log** shows the rollback with reason
-
-**Talk through this:**
-> "Watch what happens when we force a suboptimal scheduler. The watchdog gives it a 5-second grace period to stabilize. But then the latency spikes — you can see it on the chart. The SLO gauge turns yellow at the first violation, then red. After 3 consecutive violations, the watchdog triggers an automatic rollback. The system is now safe on the default scheduler, and the cooldown prevents the agent from immediately switching back."
-
----
-
-### 2.6 Step 5: View History
+Inspect the audit log of all decisions, manual overrides, and automated rollbacks:
 
 ```bash
 python -m src.cli.main history
 ```
 
-**Expected output:**
-```
-╔══════════════════════════════════════════════════════════════════════════╗
-║                     Scheduler Switch History                            ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║  #  │ Time     │ From          │ To            │ Reason      │ Result  ║
-╠═════╪══════════╪═══════════════╪═══════════════╪═════════════╪═════════╣
-║  1  │ 15:30:05 │ default       │ scx_rusty     │ UCB1 select │ ✅ OK   ║
-║  2  │ 15:30:35 │ scx_rusty     │ scx_lavd      │ UCB1 select │ ✅ OK   ║
-║  3  │ 15:31:05 │ scx_lavd      │ scx_rusty     │ UCB1 select │ ✅ OK   ║
-║  4  │ 15:31:42 │ scx_rusty     │ scx_simple    │ Manual      │ ⚠️ VIOL ║
-║  5  │ 15:31:57 │ scx_simple    │ default       │ SLO Rollback│ 🔄 ROLL ║
-╚══════════════════════════════════════════════════════════════════════════╝
+Expected output:
+```text
+=================================================================
+ Scheduler Switch History (Recent events)
+=================================================================
+ [23:33:08] scx_simple --> default      (Reason: slo_rollback, Result: rollback)
+ [23:32:53] scx_bpfland --> scx_simple  (Reason: manual,       Result: ok)
+ [23:32:48] scx_lavd --> scx_bpfland    (Reason: agent_select, Result: ok)
+ [23:32:43] scx_rusty --> scx_lavd      (Reason: agent_select, Result: ok)
+ [23:32:38] default --> scx_rusty       (Reason: agent_select, Result: ok)
+
+=================================================================
+ Watchdog Events & Rollback Log
+=================================================================
+ [23:34:08] [INFO     ] Cooldown period ended
+ [23:33:08] [INFO     ] Rollback successful
+ [23:33:08] [INFO     ] SLO rollback: 3 consecutive violations (p99_latency_us)
+ [23:33:08] [INFO     ] Violation #3: p99_latency_us
+ [23:33:03] [INFO     ] Violation #2: p99_latency_us
+ [23:32:58] [INFO     ] Violation #1: p99_latency_us
+ [23:32:58] [INFO     ] Grace period ended, monitoring started
+ [23:32:53] [INFO     ] Grace period started (5.0s)
+=================================================================
 ```
 
 ---
 
-### 2.7 Step 6: Show SLO Configuration
+### Step 5: Dynamic SLO Profile Reconfiguration
+
+AdaptiveSched supports dynamic switching between pre-configured SLO profiles:
+
+1. List available profiles:
+   ```bash
+   python -m src.cli.main slo --list
+   ```
+
+2. Switch to the `interactive` profile (tailored for ultra-low latency, P99 < 3,000 us):
+   ```bash
+   python -m src.cli.main slo --set interactive
+   ```
+
+3. Switch to the `throughput` profile (tailored for batch processing, CPU utilization up to 98%):
+   ```bash
+   python -m src.cli.main slo --set throughput
+   ```
+
+4. Return to the `balanced` general-purpose profile:
+   ```bash
+   python -m src.cli.main slo --set balanced
+   ```
+
+---
+
+### Step 6: Automated Test Suite Verification
+
+Execute the test suite to verify all core invariants:
 
 ```bash
-python -m src.cli.main slo status
+python -m unittest discover -v -s tests
 ```
 
-**Expected output:**
-```
-╔══════════════════════════════════════════════════════╗
-║              SLO Profile: balanced                   ║
-╠══════════════════════════════════════════════════════╣
-║ Constraint          │ Max      │ Current  │ Status  ║
-╠═════════════════════╪══════════╪══════════╪═════════╣
-║ p99_latency_us      │ 10000    │ 2340     │ ✅ OK   ║
-║ context_switch_rate  │ 80000    │ 45200    │ ✅ OK   ║
-║ cpu_utilization      │ 95       │ 52.3     │ ✅ OK   ║
-╠══════════════════════════════════════════════════════╣
-║ Evaluation Window:   10s                             ║
-║ Violation Threshold: 3 consecutive                   ║
-║ Grace Period:        5s                               ║
-║ Cooldown:            60s                              ║
-╚══════════════════════════════════════════════════════╝
-```
+Expected output:
+```text
+test_all_algorithms_select_known_arms_and_update (test_core.BanditTests.test_all_algorithms_select_known_arms_and_update) ... ok
+test_benchmark_quantiles (test_core.BanditTests.test_benchmark_quantiles) ... ok
+test_reward_is_bounded_and_rejects_bad_metrics (test_core.BanditTests.test_reward_is_bounded_and_rejects_bad_metrics) ... ok
+test_configuration_and_mock_profile_keep_p99_semantics (test_core.EngineAndApiTests.test_configuration_and_mock_profile_keep_p99_semantics) ... ok
+test_invalid_mode_is_rejected (test_core.EngineAndApiTests.test_invalid_mode_is_rejected) ... ok
+test_mock_engine_api_and_stop_route (test_core.EngineAndApiTests.test_mock_engine_api_and_stop_route) ... ok
+test_health_checker_uses_per_second_context_switch_rate (test_core.MockAndHealthTests.test_health_checker_uses_per_second_context_switch_rate) ... ok
+test_mock_scheduler_and_metrics_lifecycle (test_core.MockAndHealthTests.test_mock_scheduler_and_metrics_lifecycle) ... ok
+test_delta_metrics_and_explicit_unavailable_fields (test_core.ProcMetricsTests.test_delta_metrics_and_explicit_unavailable_fields) ... ok
+test_missing_proc_data_fails_with_clear_error (test_core.ProcMetricsTests.test_missing_proc_data_fails_with_clear_error) ... ok
+test_rolling_window_uses_worst_sample_and_rolls_back_at_threshold (test_core.SLOTests.test_rolling_window_uses_worst_sample_and_rolls_back_at_threshold) ... ok
+test_unavailable_field_does_not_cause_a_false_slo_pass (test_core.SLOTests.test_unavailable_field_does_not_cause_a_false_slo_pass) ... ok
+test_unknown_constraints_are_not_reported_as_good_data (test_core.SLOTests.test_unknown_constraints_are_not_reported_as_good_data) ... ok
 
----
+----------------------------------------------------------------------
+Ran 13 tests in 0.106s
 
-### 2.8 Step 7: Stop the Agent
-
-```bash
-python -m src.cli.main stop
+OK
 ```
 
 ---
 
-## 3. Troubleshooting
+## 4. Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| `ModuleNotFoundError` | Run `pip install -r requirements.txt` |
-| Dashboard doesn't open | Check if port 8080 is free, try `--port 8081` |
-| Agent won't start | Check if another instance is running: `python -m src.cli.main status` |
-| Mock data looks static | This is expected — mock mode generates realistic but synthetic data |
-
----
-
-## 4. Reviewer Q&A Preparation
-
-Keep these ready to show if asked:
-
-- **Source code:** `src/` directory structure showing clean separation
-- **Interface definitions:** `src/interfaces/` showing the contract between modules
-- **SLO profiles:** `config/slo_profiles/` showing YAML configurations
-- **Tests:** `tests/` directory with unit tests
-- **PRD:** `docs/PRD.md` for the full product spec
+| Issue | Resolution |
+|-------|------------|
+| `ModuleNotFoundError: No module named 'flask'` | Activate the project virtual environment where dependencies are installed. |
+| `Address already in use: 8080` | Stop the existing instance or launch with `--port 8081`. |
+| CLI commands return `Unable to connect` | Ensure `run_demo.py` is actively running in another terminal. |

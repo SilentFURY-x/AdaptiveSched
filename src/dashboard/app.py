@@ -55,9 +55,20 @@ def create_app(engine: Optional[AdaptiveSchedEngine] = None, config: Optional[Co
 
     @app.route('/')
     def index():
-        """Serve main dashboard UI."""
+        """Serve main dashboard UI with initial hydration payload."""
         status = engine.get_status() if engine else {}
-        return render_template('index.html', initial_status=status)
+        metrics = engine.get_metrics_history(limit=30) if engine else []
+        switches = engine.get_switch_history(limit=15) if engine else []
+        slo = engine.get_slo_status() if engine else {}
+        events = engine.get_watchdog_events(limit=20) if engine else []
+        return render_template(
+            'index.html',
+            initial_status=status,
+            initial_metrics=metrics,
+            initial_switches=switches,
+            initial_slo=slo,
+            initial_events=events,
+        )
 
     @app.route('/health')
     def health():

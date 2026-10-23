@@ -1,4 +1,4 @@
-"""AdaptiveSched — Quick Demo Launcher for Project Review 2.
+"""AdaptiveSched -- Quick Demo Launcher.
 
 Launches the complete AdaptiveSched engine in mock mode with online bandit learning,
 SLO watchdog safety monitoring, and the real-time interactive web dashboard.
@@ -20,7 +20,7 @@ from src.dashboard.app import create_app
 
 def main():
     print("=" * 70)
-    print("   AdaptiveSched — Review 2 Live Demonstration")
+    print("   AdaptiveSched -- Live Demonstration")
     print("   Autonomous CPU Scheduler Selection via Online Bandit Learning")
     print("   Arjun Tyagi (24BCE0605) & Aritra Ghosh (24BCE0598)")
     print("=" * 70)

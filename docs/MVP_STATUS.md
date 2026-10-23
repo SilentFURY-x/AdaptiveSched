@@ -1,6 +1,6 @@
 # AdaptiveSched implementation status
 
-**Status checked: October 21, 2026.** This file is the current implementation record. Older planning tables and Review 2 report text describe earlier milestones and should be read as historical material where they conflict with this page.
+**Status checked: October 21, 2026.** This file is the current implementation record. Older planning tables describe earlier milestones and should be read as historical material where they conflict with this page.
 
 ## What is implemented
 

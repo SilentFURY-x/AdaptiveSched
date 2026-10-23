@@ -4,7 +4,7 @@
 
 > **Teammate:** Aritra Ghosh (24BCE0598)  
 > **Module:** Bandit Agent + Metrics Collector  
-> **Deadline:** Before Review 3  
+> **Deadline:** Final Submission  
 > **Integration with:** Arjun's Module B (SLO Watchdog + Dashboard + CLI)
 
 ---

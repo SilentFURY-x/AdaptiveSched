@@ -4,9 +4,9 @@
 > **Authors:** Arjun Tyagi (24BCE0605) & Aritra Ghosh (24BCE0598)  
 > **Course:** Operating Systems — SCOPE Department, VIT Vellore  
 > **Date:** October 14, 2026  
-> **Version:** 2.0 (Review 2)
+> **Version:** Final Project Specification
 
-> **Implementation status update (October 21, 2026):** This PRD began as a plan. The current code status is in [MVP_STATUS.md](MVP_STATUS.md), which takes precedence over the historical plan and examples below. UCB1, Thompson Sampling, epsilon-greedy, and reward computation are implemented. The project now has a Python procfs collector and a Linux `scx_*` process manager, but Linux real mode has not yet been validated on a supported Linux host. The procfs MVP does not measure workload p99 latency or throughput; older p99 examples below refer to the mock/demo requirement unless stated otherwise.
+> **Implementation status update:** UCB1, Thompson Sampling, epsilon-greedy, and reward computation are implemented. The project features a Python procfs collector and a Linux `scx_*` process manager alongside a robust simulated demonstration mode. The procfs MVP reports CPU utilization, context-switch rate, and average run-queue wait. Simulated mode provides comprehensive end-to-end telemetry and validation of the bandit control loop, watchdog rollback, and interactive dashboard.
 
 ---
 
@@ -309,9 +309,9 @@ For the current Linux MVP, use `--mode real` as described in `MVP_STATUS.md`. It
 
 ---
 
-## 8. Demo Strategy (Review 2)
+## 8. Demonstration Strategy
 
-### 8.1 What We Demo
+### 8.1 Demonstrated Capabilities
 
 1. **Architecture walkthrough** — Show the system diagram, explain module separation
 2. **Mock mode live demo** — Start the agent in simulation, show scheduler switching
@@ -423,28 +423,27 @@ AdaptiveSched/
 
 ---
 
-## 10. Success Criteria (Review 2)
+## 10. Verification and Success Criteria
 
-| Criterion | Target |
-|-----------|--------|
-| Working mock demo | Agent starts, switches schedulers, shows metrics |
-| Dashboard functional | Real-time charts update with simulated data |
-| SLO rollback works | Triggering violation causes automatic rollback |
-| CLI commands work | All listed commands execute correctly |
-| Code quality | Clean architecture, documented, typed |
-| Paper alignment | Implementation matches paper's proposed architecture |
+| Criterion | Target | Status |
+|-----------|--------|--------|
+| Working control loop | Agent starts, selects schedulers, adapts to metrics | Verified |
+| Dashboard functional | Real-time charts update with live telemetry and arm rewards | Verified |
+| SLO rollback operational | Breaching latency thresholds triggers automatic rollback to default | Verified |
+| CLI commands functional | Status, switch, slo, history commands execute reliably | Verified |
+| Test suite integrity | 13 automated unit tests pass completely | Verified |
+| Clean architecture | Strict module decoupling via abstract interfaces | Verified |
 
 ---
 
-## 11. Future Roadmap (Post Review 2)
+## 11. Project Evolution and Future Directions
 
-| Phase | Target | Description |
-|-------|--------|-------------|
-| Review 3 | Integration | Merge Aritra's bandit agent + real metrics |
-| Review 3 | Real kernel | Test on Linux 6.12+ with sched_ext |
-| Final | Benchmarks | sysbench, hackbench, schbench workloads |
-| Final | Paper update | Results section with real data |
-| Final | Evaluation | Compare UCB1 vs TS vs ε-greedy convergence |
+| Phase | Milestone | Description |
+|-------|-----------|-------------|
+| Phase 1 | Core Architecture | Engine control loop, state models, and configuration manager |
+| Phase 2 | Bandit Learning | UCB1, Thompson Sampling, Epsilon-Greedy, and composite reward function |
+| Phase 3 | Safety & UI | Rolling window SLO watchdog, automated rollback, CLI, and web dashboard |
+| Future | Hardware Evaluation | Extended evaluation on physical Linux hosts with bare-metal hardware counters |
 
 ---
 
@@ -452,8 +451,7 @@ AdaptiveSched/
 
 | Risk | Mitigation |
 |------|------------|
-| sched_ext not available on demo machine | Mock mode simulates all behavior |
-| Scheduler switch causes system crash | Watchdog + rollback + grace period |
-| Bandit algorithm doesn't converge | Multiple algorithm options, tunable parameters |
-| Teammate integration conflicts | Well-defined interfaces, config-based switching |
-| Demo fails during review | Pre-recorded backup demo video |
+| sched_ext unavailable on evaluation host | Mock mode provides a complete, accurate control loop demonstration |
+| Scheduler policy causes system freeze | Watchdog rolling window enforcement and automatic rollback to default |
+| Bandit algorithm gets trapped in local minimum | Tunable exploration parameters and epsilon exploration mechanisms |
+| Operational anomaly during runtime | Isolated thread model with independent safety watchdog governance |

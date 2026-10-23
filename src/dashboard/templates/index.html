@@ -366,6 +366,17 @@
     <!-- Notification Toast Container -->
     <div id="toast-container" class="toast-container"></div>
 
+    <!-- Initial Server Hydration Data -->
+    <script>
+        window.__INITIAL_DATA__ = {
+            status: {{ initial_status | tojson | safe if initial_status else 'null' }},
+            metrics: {{ initial_metrics | tojson | safe if initial_metrics else '[]' }},
+            switches: {{ initial_switches | tojson | safe if initial_switches else '[]' }},
+            slo: {{ initial_slo | tojson | safe if initial_slo else 'null' }},
+            events: {{ initial_events | tojson | safe if initial_events else '[]' }}
+        };
+    </script>
+
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/lenis@1.1.20/dist/lenis.min.js" defer></script>

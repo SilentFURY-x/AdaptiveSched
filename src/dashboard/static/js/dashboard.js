@@ -18,6 +18,15 @@ let historyUpdateInterval = null;
 document.addEventListener('DOMContentLoaded', () => {
     initCharts();
     initMotionSystem();
+    if (window.__INITIAL_DATA__) {
+        if (window.__INITIAL_DATA__.slo) applySloData(window.__INITIAL_DATA__.slo);
+        if (window.__INITIAL_DATA__.status) updateStatusUI(window.__INITIAL_DATA__.status);
+        if (window.__INITIAL_DATA__.metrics && window.__INITIAL_DATA__.metrics.length > 0) {
+            updateChartsWithMetrics(window.__INITIAL_DATA__.metrics);
+        }
+        if (window.__INITIAL_DATA__.switches) renderSwitchHistoryData(window.__INITIAL_DATA__.switches);
+        if (window.__INITIAL_DATA__.events) renderWatchdogEventsData(window.__INITIAL_DATA__.events);
+    }
     fetchInitialData();
     updateInterval = setInterval(pollMetrics, 1000);
     historyUpdateInterval = setInterval(() => {
@@ -64,7 +73,7 @@ function initCharts() {
     const commonChartOptions = {
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 350 },
+        animation: false,
         scales: {
             x: {
                 display: false,
@@ -522,30 +531,35 @@ async function manualSwitch(schedulerName) {
 /* ---------------------------------------------------------
    SLO Profile Management
    --------------------------------------------------------- */
+function applySloData(data) {
+    if (!data) return;
+    document.getElementById('active-profile-name').textContent = data.profile || 'balanced';
+    const select = document.getElementById('slo-profile-select');
+    if (select) select.value = data.profile || 'balanced';
+
+    // Find latency & CPU constraints
+    let maxLatency = 5000;
+    let maxCpu = 90;
+    if (data.constraints) {
+        data.constraints.forEach(c => {
+            if (c.name === 'p99_latency_us' || c.name.includes('latency')) maxLatency = c.max;
+            if (c.name === 'cpu_utilization' || c.name.includes('cpu')) maxCpu = c.max;
+        });
+    }
+
+    window._activeSloMaxLatency = maxLatency;
+    document.getElementById('latency-target-val').textContent = maxLatency;
+    document.getElementById('profile-max-latency').textContent = `${maxLatency} μs`;
+    document.getElementById('profile-max-cpu').textContent = `${maxCpu}%`;
+    document.getElementById('profile-threshold').textContent = `${data.violation_threshold || 3} cycles`;
+}
+
 async function refreshSloProfile() {
     try {
         const res = await fetch('/api/slo');
         if (res.ok) {
             const data = await res.json();
-            document.getElementById('active-profile-name').textContent = data.profile || 'balanced';
-            const select = document.getElementById('slo-profile-select');
-            if (select) select.value = data.profile || 'balanced';
-
-            // Find latency & CPU constraints
-            let maxLatency = 5000;
-            let maxCpu = 90;
-            if (data.constraints) {
-                data.constraints.forEach(c => {
-                    if (c.name === 'p99_latency_us' || c.name.includes('latency')) maxLatency = c.max;
-                    if (c.name === 'cpu_utilization' || c.name.includes('cpu')) maxCpu = c.max;
-                });
-            }
-
-            window._activeSloMaxLatency = maxLatency;
-            document.getElementById('latency-target-val').textContent = maxLatency;
-            document.getElementById('profile-max-latency').textContent = `${maxLatency} μs`;
-            document.getElementById('profile-max-cpu').textContent = `${maxCpu}%`;
-            document.getElementById('profile-threshold').textContent = `${data.violation_threshold || 3} cycles`;
+            applySloData(data);
         }
     } catch (err) {
         console.warn('Failed to load SLO details:', err);
@@ -607,44 +621,76 @@ async function togglePauseResume() {
 /* ---------------------------------------------------------
    History & Event Logs
    --------------------------------------------------------- */
+function renderSwitchHistoryData(switches) {
+    const tbody = document.getElementById('switch-history-tbody');
+    if (!tbody || !switches) return;
+
+    if (switches.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No scheduler switches recorded yet.</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = switches.map(sw => {
+        const time = new Date(sw.timestamp * 1000).toLocaleTimeString();
+        const isRollback = sw.reason === 'slo_rollback' || sw.result === 'rollback';
+        const reasonBadge = isRollback
+            ? `<span class="tag tag-danger">ROLLBACK</span>`
+            : (sw.reason === 'manual' ? `<span class="tag tag-warning">MANUAL</span>` : `<span class="tag tag-success">AGENT</span>`);
+
+        const lat = sw.metrics_at_switch ? Math.round(sw.metrics_at_switch.scheduling_latency_us) + ' μs' : '--';
+        const cpu = sw.metrics_at_switch ? sw.metrics_at_switch.cpu_utilization.toFixed(1) + '%' : '--';
+
+        return `
+            <tr>
+                <td class="mono">${time}</td>
+                <td><span class="mono">${sw.from_scheduler}</span></td>
+                <td><b class="mono text-accent">${sw.to_scheduler}</b></td>
+                <td>${reasonBadge}</td>
+                <td class="mono">${lat}</td>
+                <td class="mono">${cpu}</td>
+                <td><span class="tag ${sw.result === 'ok' ? 'tag-success' : 'tag-warning'}">${sw.result.toUpperCase()}</span></td>
+            </tr>
+        `;
+    }).join('');
+}
+
 async function refreshHistory() {
     try {
         const res = await fetch('/api/switches?limit=15');
         if (!res.ok) return;
         const switches = await res.json();
-        const tbody = document.getElementById('switch-history-tbody');
-        if (!tbody) return;
-
-        if (switches.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">No scheduler switches recorded yet.</td></tr>`;
-            return;
-        }
-
-        tbody.innerHTML = switches.map(sw => {
-            const time = new Date(sw.timestamp * 1000).toLocaleTimeString();
-            const isRollback = sw.reason === 'slo_rollback' || sw.result === 'rollback';
-            const reasonBadge = isRollback
-                ? `<span class="tag tag-danger">ROLLBACK</span>`
-                : (sw.reason === 'manual' ? `<span class="tag tag-warning">MANUAL</span>` : `<span class="tag tag-success">AGENT</span>`);
-
-            const lat = sw.metrics_at_switch ? Math.round(sw.metrics_at_switch.scheduling_latency_us) + ' μs' : '--';
-            const cpu = sw.metrics_at_switch ? sw.metrics_at_switch.cpu_utilization.toFixed(1) + '%' : '--';
-
-            return `
-                <tr>
-                    <td class="mono">${time}</td>
-                    <td><span class="mono">${sw.from_scheduler}</span></td>
-                    <td><b class="mono text-accent">${sw.to_scheduler}</b></td>
-                    <td>${reasonBadge}</td>
-                    <td class="mono">${lat}</td>
-                    <td class="mono">${cpu}</td>
-                    <td><span class="tag ${sw.result === 'ok' ? 'tag-success' : 'tag-warning'}">${sw.result.toUpperCase()}</span></td>
-                </tr>
-            `;
-        }).join('');
+        renderSwitchHistoryData(switches);
     } catch (e) {
         console.warn('History fetch error:', e);
     }
+}
+
+function renderWatchdogEventsData(events) {
+    const container = document.getElementById('events-log-list');
+    if (!container || !events) return;
+
+    if (events.length === 0) {
+        container.innerHTML = `<div class="event-placeholder">No safety events recorded yet.</div>`;
+        return;
+    }
+
+    container.innerHTML = events.map(ev => {
+        const time = new Date(ev.timestamp * 1000).toLocaleTimeString();
+        const eventType = ev.type || ev.event_type || 'info';
+        let itemClass = 'event-info';
+        if (eventType.includes('violation')) itemClass = 'event-violation';
+        if (eventType.includes('rollback')) itemClass = 'event-rollback';
+
+        return `
+            <div class="event-item ${itemClass}">
+                <div class="event-meta">
+                    <span>[${eventType.replaceAll('_', ' ').toUpperCase()}]</span>
+                    <span class="mono">${time}</span>
+                </div>
+                <div class="event-msg">${ev.message || ev.details || 'Event logged'}</div>
+            </div>
+        `;
+    }).join('');
 }
 
 async function refreshEvents() {
@@ -652,31 +698,7 @@ async function refreshEvents() {
         const res = await fetch('/api/events?limit=20');
         if (!res.ok) return;
         const events = await res.json();
-        const container = document.getElementById('events-log-list');
-        if (!container) return;
-
-        if (events.length === 0) {
-            container.innerHTML = `<div class="event-placeholder">No safety events recorded yet.</div>`;
-            return;
-        }
-
-        container.innerHTML = events.map(ev => {
-            const time = new Date(ev.timestamp * 1000).toLocaleTimeString();
-            const eventType = ev.type || ev.event_type || 'info';
-            let itemClass = 'event-info';
-            if (eventType.includes('violation')) itemClass = 'event-violation';
-            if (eventType.includes('rollback')) itemClass = 'event-rollback';
-
-            return `
-                <div class="event-item ${itemClass}">
-                    <div class="event-meta">
-                        <span>[${eventType.replaceAll('_', ' ').toUpperCase()}]</span>
-                        <span class="mono">${time}</span>
-                    </div>
-                    <div class="event-msg">${ev.message || ev.details || 'Event logged'}</div>
-                </div>
-            `;
-        }).join('');
+        renderWatchdogEventsData(events);
     } catch (e) {
         console.warn('Events fetch error:', e);
     }
